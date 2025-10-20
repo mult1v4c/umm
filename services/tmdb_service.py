@@ -86,12 +86,30 @@ class TMDbService:
             resp.raise_for_status()
             videos = resp.json().get("results", [])
 
-            official = next((v for v in videos if v.get("site") == "YouTube" and v.get("type") == "Trailer" and v.get("official")), None)
-            if official:
-                return official.get("key")
+            youtube_videos = [v for v in videos if v.get("site") == "YouTube"]
 
-            trailer = next((v for v in videos if v.get("site") == "YouTube" and v.get("type") == "Trailer"), None)
-            return trailer.get("key") if trailer else None
+            # Define priority order
+            priorities = {
+                ("Trailer", True): 1,  # Official Trailer
+                ("Trailer", False): 2, # Unofficial Trailer
+                ("Teaser", True): 3,   # Official Teaser
+                ("Teaser", False): 4,  # Unofficial Teaser
+            }
+
+            best_video = None
+            lowest_priority = float('inf')
+
+            for v in youtube_videos:
+                v_type = v.get("type")
+                v_official = v.get("official", False)
+                priority = priorities.get((v_type, v_official))
+
+                if priority is not None and priority < lowest_priority:
+                    best_video = v
+                    lowest_priority = priority
+
+            return best_video.get("key") if best_video else None
+
         except requests.RequestException:
             logger.warning(f"Failed to fetch trailer key for movie ID {movie_id}.")
             return None
