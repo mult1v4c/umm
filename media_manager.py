@@ -4,7 +4,7 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, Any, List, Callable, Set
+from typing import Dict, Any, List, Callable, Set, Optional
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
@@ -71,15 +71,8 @@ class MediaManager:
 
     def fetch_trailers_for_existing_movies(self):
         logger.info("Fetching trailers for existing movies in the library...")
-        if not self.library_cache_path.exists():
-            logger.warning("[yellow]Library cache ('library.json') not found. Run the sanitizer [1] first.[/yellow]")
-            return
-
-        try:
-            with self.library_cache_path.open("r", encoding="utf-8") as f:
-                library = json.load(f)
-        except json.JSONDecodeError:
-            logger.error("[red]Could not parse library.json. It may be corrupt.[/red]")
+        library = self._load_library_cache()
+        if library is None:
             return
 
         movies_to_download = []
@@ -87,12 +80,11 @@ class MediaManager:
             movie_path = Path(data['file_path'])
             paths = self.fs_manager.get_movie_paths(movie_path.parent.name)
 
-            # Check if a trailer file already exists
             if not paths.get_trailer_path():
                 movies_to_download.append({
                     "id": int(movie_id),
                     "title": data['title'],
-                    "release_date": f"{data['year']}-01-01" # Mock release date for folder name
+                    "release_date": f"{data['year']}-01-01"
                 })
 
         if not movies_to_download:
@@ -111,7 +103,6 @@ class MediaManager:
         year_end = self.cfg["END_YEAR"]
 
         self._load_known_failures()
-
         movies = self.tmdb_service.fetch_movies(
             year_start=year_start,
             year_end=year_end,
@@ -123,28 +114,52 @@ class MediaManager:
             return
 
         movies_to_process = self._filter_existing_movies(movies, year_start, year_end)
-
         if self.is_dry_run():
             logger.info("[bold yellow]DRY RUN MODE: No files will be written![/]\nTrailers below ready for download:")
-
         self._process_movies_pipeline(movies_to_process)
         self._save_known_failures()
 
     def sync_trailers_with_library(self):
-        logger.info("[bold yellow]Feature not yet implemented.[/bold yellow]")
+        logger.info("Syncing library cache with file system...")
+        library = self._load_library_cache()
+        if library is None:
+            return
+        if not library:
+            logger.info("Library is empty. Nothing to sync.")
+            return
+
+        cache_deletions = []
+        trailer_deletions = []
+
+        # Check 1: Cache Integrity (Movies in cache but files missing)
+        logger.info("Checking for missing movie files...")
+        for movie_id, data in library.items():
+            movie_path = Path(data.get('file_path', ''))
+            if not movie_path.exists():
+                logger.warning(f"  [yellow]Missing file for '{data['title']}'. Marking cache entry for removal.[/yellow]")
+                cache_deletions.append(movie_id)
+
+        # Check 2: Orphaned Trailers (Trailers present but movie missing from cache)
+        logger.info("Checking for orphaned trailer files...")
+        all_trailers = list(self.fs_manager.download_folder.rglob(f"*{TRAILER_SUFFIX}.mp4"))
+        valid_movie_dirs = {Path(data['file_path']).parent for data in library.values() if 'file_path' in data}
+
+        for trailer_path in all_trailers:
+            if trailer_path.parent not in valid_movie_dirs:
+                logger.warning(f"  [yellow]Found orphaned trailer: '{trailer_path.name}'. Marking for deletion.[/yellow]")
+                trailer_deletions.append(trailer_path)
+
+        # 3. Execute or Simulate Operations
+        if not cache_deletions and not trailer_deletions:
+            logger.info("[green]Library is already perfectly in sync![/green]")
+            return
+
+        self._execute_sync_operations(cache_deletions, trailer_deletions, library)
 
     def show_library_status(self):
-        if not self.library_cache_path.exists():
-            logger.warning("[yellow]Library cache ('library.json') not found. Run the sanitizer first.[/yellow]")
+        library = self._load_library_cache()
+        if library is None:
             return
-
-        try:
-            with self.library_cache_path.open("r", encoding="utf-8") as f:
-                library = json.load(f)
-        except json.JSONDecodeError:
-            logger.error("[red]Could not parse library.json. It may be corrupt.[/red]")
-            return
-
         if not library:
             logger.info("Your library is empty.")
             return
@@ -167,7 +182,62 @@ class MediaManager:
     def show_settings_and_utilities(self):
         logger.info("[bold yellow]Feature not yet implemented.[/bold yellow]")
 
-    # --- Helper Methods ---
+    # --- Library Cache Helpers ---
+
+    def _load_library_cache(self) -> Optional[Dict[str, Dict]]:
+        if not self.library_cache_path.exists():
+            logger.warning("[yellow]Library cache ('library.json') not found. Run the sanitizer [1] first.[/yellow]")
+            return None
+        try:
+            with self.library_cache_path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            logger.error("[red]Could not parse library.json. It may be corrupt.[/red]")
+            return None
+
+    def _save_library_cache(self, cache: Dict):
+        try:
+            with self.library_cache_path.open("w", encoding="utf-8") as f:
+                json.dump(cache, f, indent=4)
+            logger.info(f"💾 Library cache saved to [cyan]{self.library_cache_path}[/cyan]")
+        except IOError as e:
+            logger.error(f"Failed to save library cache: {e}")
+
+    # --- Sync Helpers ---
+
+    def _execute_sync_operations(self, cache_deletions, trailer_deletions, library):
+        if self.is_dry_run():
+            logger.info("[bold yellow]DRY RUN MODE: The following sync operations are planned:[/bold yellow]")
+            for movie_id in cache_deletions:
+                title = library.get(movie_id, {}).get('title', 'Unknown')
+                logger.info(f"  [cyan]REMOVE CACHE:[/] Entry for '{title}' (ID: {movie_id})")
+            for trailer_path in trailer_deletions:
+                logger.info(f"  [red]DELETE FILE:[/] Orphaned trailer '{trailer_path}'")
+
+            if self.console.input("\n[bold]Proceed with changes? (y/n): [/bold]").lower() == 'y':
+                logger.info("Executing sync operations...")
+                self._run_sync_operations(cache_deletions, trailer_deletions, library)
+            else:
+                logger.info("Sync aborted by user.")
+        else:
+            self._run_sync_operations(cache_deletions, trailer_deletions, library)
+
+    def _run_sync_operations(self, cache_deletions, trailer_deletions, library):
+        # Perform file deletions
+        for trailer_path in trailer_deletions:
+            try:
+                trailer_path.unlink()
+                logger.info(f"  [green]DELETED:[/] '{trailer_path}'")
+            except OSError as e:
+                logger.error(f"  [red]FAILED to delete '{trailer_path}': {e}[/red]")
+
+        # Perform cache deletions
+        if cache_deletions:
+            cleaned_library = {mid: data for mid, data in library.items() if mid not in cache_deletions}
+            self._save_library_cache(cleaned_library)
+            logger.info(f"  [green]CLEANED:[/] Removed {len(cache_deletions)} invalid entries from library.json.")
+
+    # --- Other Helpers ---
 
     def _increment_failures(self):
         with self.failure_lock:
@@ -216,15 +286,12 @@ class MediaManager:
             str(year_start) if year_start == year_end else f"{year_start}-{year_end}"
         )
         total_count = len(movies)
-
         movies_to_download = []
         for movie in movies:
             title = movie.get("title", "Unknown Title")
             release_date = movie.get("release_date", "")
-
             folder_name = self.fs_manager.prepare_movie_folder_name(title, release_date)
             paths = self.fs_manager.get_movie_paths(folder_name)
-
             if not paths.get_trailer_path():
                 movies_to_download.append(movie)
 
@@ -244,7 +311,6 @@ class MediaManager:
 
         download_workers = self.cfg.get("MAX_DOWNLOAD_WORKERS", 4)
         ffmpeg_workers = self.cfg.get("MAX_FFMPEG_WORKERS", 4)
-
         if not self.is_dry_run():
             logger.info(
                 f"Processing movies in parallel (Downloads: {download_workers}, Video Tasks: {ffmpeg_workers})"
@@ -300,7 +366,6 @@ class MediaManager:
         folder_name = self.fs_manager.prepare_movie_folder_name(title, release_date)
         paths = self.fs_manager.get_movie_paths(folder_name)
         result["folder"] = folder_name
-
         if self.is_dry_run():
             logger.info(f"- [cyan]{title}[/cyan]")
             result["reason"] = "dry-run"
@@ -314,7 +379,6 @@ class MediaManager:
 
         paths.root.mkdir(parents=True, exist_ok=True)
         out_template = str(paths.root / f"{folder_name}{TRAILER_SUFFIX}.%(ext)s")
-
         download_ok = self.downloader_service.download_trailer(
             youtube_key=trailer_key,
             out_template=out_template,
@@ -328,11 +392,9 @@ class MediaManager:
             return result
 
         result["downloaded"] = True
-
         ffmpeg_pool.submit(self._ffmpeg_task, "placeholder", paths, title)
         if self.cfg["CREATE_BACKDROP"]:
             ffmpeg_pool.submit(self._ffmpeg_task, "backdrop", paths, title)
-
         return result
 
     def _ffmpeg_task(self, task_type: str, paths: MoviePaths, title: str):
@@ -352,7 +414,6 @@ class MediaManager:
             if ok:
                 logger.info(f"   Created placeholder for {title}")
                 self.stats["placeholders"] += 1
-
         elif task_type == "backdrop":
             ok = self.asset_generator_service.create_backdrop_image(
                 paths.backdrop,
