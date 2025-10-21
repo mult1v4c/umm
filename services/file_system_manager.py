@@ -1,3 +1,4 @@
+# mult1v4c/umm/umm-a89e29615fabfbb6e2334882de581ce3e1669695/services/file_system_manager.py
 import logging
 import os
 import re
@@ -40,7 +41,14 @@ class FileSystemManager:
     def prepare_movie_folder_name(self, title: str, release_date: str) -> str:
         year_str = release_date[:4] if release_date and len(release_date) >= 4 else "N/A"
         folder_name = f"{title} ({year_str})"
-        return re.sub(r'[<>:"/\\|?*]+', ' ', folder_name).strip()
+
+        # --- THIS IS THE FIX ---
+        # 1. Replace all illegal characters with a single space.
+        folder_name = re.sub(r'[<>:"/\\|?*]+', ' ', folder_name)
+        # 2. "Squeeze" all multi-space sequences down to a single space.
+        folder_name = re.sub(r'\s+', ' ', folder_name).strip()
+
+        return folder_name
 
     def clean_empty_folders(self, dry_run: bool):
         removed_count = 0
