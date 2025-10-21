@@ -1,3 +1,4 @@
+# mult1v4c/umm/umm-a89e29615fabfbb6e2334882de581ce3e1669695/media_manager.py
 import csv
 import json
 import logging
@@ -93,9 +94,6 @@ class MediaManager:
             paths = self.library_fs_manager.get_movie_paths(movie_path.parent.name)
 
             if not paths.get_trailer_path():
-                # --- THIS IS THE FIX for Bugs 2 & 3 ---
-                # We pass the *exact* local folder path to the downloader
-                # instead of letting it re-calculate one from the TMDB title.
                 movies_to_download.append({
                     "id": int(movie_id),
                     "title": data['title'],
@@ -103,7 +101,6 @@ class MediaManager:
                     "local_folder_path": movie_path.parent,
                     "local_folder_name": movie_path.parent.name
                 })
-                # --- END OF FIX ---
 
         if not movies_to_download:
             logger.info("[green]Your library is fully up-to-date with trailers![/green]")
@@ -449,12 +446,8 @@ class MediaManager:
             folder_name = fs_manager.prepare_movie_folder_name(title, release_date)
             paths = fs_manager.get_movie_paths(folder_name)
 
-            # --- THIS IS THE FIX for Bugs 2 & 3 ---
-            # We must pass the calculated folder name to the download task
-            # for Option 3. For Option 2, this is handled in its own loop.
             movie["local_folder_name"] = folder_name
             movie["local_folder_path"] = paths.root
-            # --- END OF FIX ---
 
             if not paths.get_trailer_path():
                 movies_to_download.append(movie)
@@ -477,11 +470,8 @@ class MediaManager:
             logger.info("[bold yellow]DRY RUN MODE: The following trailers are planned for download:[/bold yellow]")
             for movie in movies:
                 title = movie.get("title", "Unknown Title")
-                # --- THIS IS THE FIX for Bugs 2 & 3 ---
-                # Use the pre-determined local folder path
                 folder_name = movie.get("local_folder_name", "Unknown")
                 folder_path = movie.get("local_folder_path", "Unknown")
-                # --- END OF FIX ---
                 trailer_path = folder_path / f"{folder_name}{TRAILER_SUFFIX}.mp4"
                 logger.info(f"  - [cyan]{title}[/cyan] -> {trailer_path.resolve()}")
 
@@ -550,21 +540,15 @@ class MediaManager:
             result["reason"] = "known failure"
             return result
 
-        # --- THIS IS THE FIX for Bugs 2 & 3 ---
-        # Use the passed-in folder name and path, don't recalculate it.
         folder_name = movie.get("local_folder_name")
         folder_path = movie.get("local_folder_path")
 
         if not folder_name or not folder_path:
-            # This is a fallback for Option 3 (Upcoming), which calculates it differently.
             folder_name = fs_manager.prepare_movie_folder_name(title, movie.get("release_date", ""))
             folder_path = fs_manager.download_folder / folder_name
 
-        # We now have the definitive folder path, e.g., "X:\Media\Movies\Amelie (2001)"
         paths = fs_manager.get_movie_paths(folder_name)
-        # We MUST override the root to be the one we were given
         paths.root = folder_path
-        # --- END OF FIX ---
 
         result["folder"] = folder_name
 
@@ -597,11 +581,6 @@ class MediaManager:
         return result
 
     def _ffmpeg_task(self, task_type: str, paths: MoviePaths, title: str):
-        if self.is_dry_run():
-            logger.info(
-                f"[yellow]Dry Run:[/] Would create {task_type} for '[cyan]{title}[/cyan]'"
-            )
-            return
 
         if task_type == "placeholder":
             ok = self.asset_generator_service.create_black_video(
