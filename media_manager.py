@@ -31,7 +31,6 @@ class MediaManager:
         self.failure_lock = threading.Lock()
         self.stats = {"downloads": [], "placeholders": 0, "backdrops": 0}
         self.known_failures: set[int] = set()
-        # --- PATHS BASED ON NEW CONFIG ---
         self.library_path = Path(config["MOVIE_LIBRARY"]).expanduser()
         self.download_path = Path(config["DOWNLOAD_FOLDER"]).expanduser()
         self.library_cache_path = self.library_path / "library.json" # library.json lives IN the movie library
@@ -207,7 +206,7 @@ class MediaManager:
 
 
     def show_settings_and_utilities(self):
-        """Displays the settings and utilities sub-menu."""
+        # Displays the settings and utilities sub-menu
         while True:
             self._print_settings_menu()
             choice = self.console.input("Choose an option: ").strip().lower()

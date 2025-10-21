@@ -9,10 +9,8 @@ CONFIG_FILE_PATH = Path("config.json")
 
 DEFAULT_CONFIG = {
     "TMDB_API_KEY": "YOUR_API_KEY",
-    # --- NEW / UPDATED SETTINGS ---
     "MOVIE_LIBRARY": "~/Movies",
     "DOWNLOAD_FOLDER": "~/Downloads/UMM_New_Trailers",
-    # ---
     "CACHE_FOLDER": "~/.cache/umm",
     "YT_DLP_PATH": "yt-dlp",
     "FFMPEG_PATH": "ffmpeg",
