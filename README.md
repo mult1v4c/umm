@@ -41,6 +41,14 @@ git clone https://github.com/mult1v4c/umm.git
 cd umm
 pip install -r requirements.txt
 ```
+## Disclaimer
+
+> [!WARNING]
+> **UMM performs permanent file modifications (rename, move, delete) on your files.**
+
+Although the **Dry-Run Mode** provides a crucial safety net, I strongly recommend you **BACK UP** your media library before running UMM on it for the first time. If a back-up is out of the question (e.g., large library) I suggest using a dummy directory with UMM so you can test its functions.
+
+It goes without saying, as with any tool that modifies your file system, UMM is provided "AS IS" without formal warranty. Please use with care.
 
 ## Configuration & First Run
 On the first launch, UMM will generate a default `config.json` file in your repository folder.
