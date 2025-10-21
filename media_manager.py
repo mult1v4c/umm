@@ -12,13 +12,14 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
-from config import KNOWN_FAILURES_FILENAME, TRAILER_SUFFIX, load_config, save_config
+from config import KNOWN_FAILURES_FILENAME, TRAILER_SUFFIX, STATUS_FILENAME, load_config, save_config
 from services.tmdb_service import TMDbService
 from services.downloader_service import DownloaderService
 from services.asset_generator_service import AssetGeneratorService
 from services.file_system_manager import FileSystemManager, MoviePaths
 from services.sanitizer_service import SanitizerService
 from services.junk_service import JunkService
+from utils import format_time_ago
 
 logger = logging.getLogger("media_manager")
 
@@ -41,6 +42,7 @@ class MediaManager:
         self.junk_cache_path = self.cache_folder / "junk_cache.json"
         self.tmdb_cache_path = self.cache_folder / "movies_cache.json"
         self.failures_cache_path = self._get_failures_cache_path()
+        self.status_file_path = self.cache_folder / STATUS_FILENAME
 
 
         self.tmdb_service = TMDbService(
@@ -171,26 +173,62 @@ class MediaManager:
         self._execute_sync_operations(cache_deletions, trailer_deletions, library)
 
     def show_library_status(self):
-        library = self._load_library_cache()
-        if library is None:
-            return
-        if not library:
-            logger.info("Your library is empty.")
-            return
+        """Displays a simple text-based status of the library and caches."""
+        logger.info("Gathering library status...")
 
-        table = Table(title="Library Status")
-        table.add_column("Total Movies", justify="right", style="cyan", no_wrap=True)
-        table.add_column("Movies Missing Trailers", justify="right", style="magenta", no_wrap=True)
-
+        # 1. Get Library Stats
+        total_movies = 0
         missing_trailers = 0
-        for movie_id, data in library.items():
-            movie_path = Path(data['file_path'])
-            paths = self.library_fs_manager.get_movie_paths(movie_path.parent.name)
-            if not paths.get_trailer_path():
-                missing_trailers += 1
+        library = self._load_library_cache()
 
-        table.add_row(str(len(library)), str(missing_trailers))
-        self.console.print(table)
+        if library:
+            total_movies = len(library)
+            for movie_id, data in library.items():
+                movie_path = Path(data['file_path'])
+                paths = self.library_fs_manager.get_movie_paths(movie_path.parent.name)
+                if not paths.get_trailer_path():
+                    missing_trailers += 1
+        else:
+            logger.info("Run the Sanitizer [1] to build your library.")
+
+        # 2. Get Upcoming Trailers Stats
+        upcoming_trailers = 0
+        try:
+            if self.download_path.exists():
+                upcoming_trailers = len([p for p in self.download_path.iterdir() if p.is_dir()])
+        except Exception as e:
+            logger.warning(f"Could not scan download folder: {e}")
+
+        # 3. Get Cache Timestamps
+        last_cache_update_ts = 0
+        if self.library_cache_path.exists():
+            try:
+                last_cache_update_ts = self.library_cache_path.stat().st_mtime
+            except FileNotFoundError:
+                pass # Will just show "never"
+
+        last_run_ts = 0
+        if self.status_file_path.exists():
+            try:
+                with self.status_file_path.open("r", encoding="utf-8") as f:
+                    last_run_ts = json.load(f).get("last_run", 0)
+            except (json.JSONDecodeError, IOError, FileNotFoundError):
+                pass # Will just show "never"
+
+        # 4. Get Known Failures
+        self._load_known_failures() # Ensure it's loaded
+        known_failures_count = len(self.known_failures)
+
+        # 5. Print the report
+        self.console.print("\n[bold cyan]------ UMM Status Report ------[/bold cyan]")
+        self.console.print(f"  [bold]Total Movies:[/bold] {total_movies}")
+        self.console.print(f"  [bold]Movies Missing Trailers:[/bold] {missing_trailers}")
+        self.console.print(f"  [bold]Upcoming Trailers:[/bold] {upcoming_trailers}")
+        self.console.print(f"  [bold]Known Trailer Failures:[/bold] {known_failures_count}")
+        self.console.print("  -----------------------------")
+        self.console.print(f"  [bold]Last Library Scan:[/bold] {format_time_ago(last_cache_update_ts)}")
+        self.console.print(f"  [bold]Last UMM Activity:[/bold] {format_time_ago(last_run_ts)}")
+        self.console.print("[bold cyan]-----------------------------[/bold cyan]\n")
 
 
     def show_settings_and_utilities(self):

@@ -33,6 +33,7 @@ DEFAULT_CONFIG = {
 KNOWN_FAILURES_FILENAME = "known_failures.json"
 TRAILER_SUFFIX = "-trailer"
 BACKDROP_FILENAME = "backdrop.jpg"
+STATUS_FILENAME = "umm_status.json"
 
 # TMDB
 BASE_URL = "https://api.themoviedb.org/3"
