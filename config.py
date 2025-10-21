@@ -9,7 +9,8 @@ CONFIG_FILE_PATH = Path("config.json")
 
 DEFAULT_CONFIG = {
     "TMDB_API_KEY": "YOUR_API_KEY",
-    "DOWNLOAD_FOLDER": "~/Movies",
+    "MOVIE_LIBRARY": "X:/Media/Movies",
+    "DOWNLOAD_FOLDER": "X:/Media/Trailers",
     "CACHE_FOLDER": "~/.cache/umm",
     "YT_DLP_PATH": "yt-dlp",
     "FFMPEG_PATH": "ffmpeg",
@@ -31,6 +32,7 @@ DEFAULT_CONFIG = {
 
 KNOWN_FAILURES_FILENAME = "known_failures.json"
 TRAILER_SUFFIX = "-trailer"
+BACKDROP_FILENAME = "backdrop.jpg"
 
 # TMDB
 BASE_URL = "https://api.themoviedb.org/3"
@@ -56,9 +58,8 @@ def load_config() -> Dict[str, Any]:
         logger.error(f"Failed to read or parse config file: {e}")
         sys.exit(1)
 
-# --- NEW FUNCTION ---
 def save_config(config_data: Dict[str, Any]):
-    """Saves the provided dictionary back to the config.json file."""
+    # Saves the provided dictionary back to the config.json file
     try:
         with CONFIG_FILE_PATH.open("w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=4)

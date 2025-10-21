@@ -8,25 +8,24 @@ from typing import List, Set
 logger = logging.getLogger("media_manager")
 
 class JunkService:
-    def __init__(self, cache_folder: str, video_extensions: Set[str], download_folder: Path):
+    def __init__(self, cache_folder: str, video_extensions: Set[str], library_folder: Path):
         self.cache_path = Path(cache_folder).expanduser() / "junk_cache.json"
         self.video_extensions = video_extensions
-        self.download_folder = download_folder
+        self.library_folder = library_folder # Renamed from download_folder
 
     def _is_normalized_filename(self, filename_stem: str) -> bool:
-        """Checks if a filename matches the 'Title (Year)' format."""
-        # Matches a string that ends with a space and then a year in parentheses.
+        # Checks if a filename matches the 'Title (Year)' format
         return bool(re.search(r'^.+\s\(\d{4}\)$', filename_stem))
 
     def _scan_for_videos(self) -> List[Path]:
-        """Scans the movie directory for all video files."""
+        # Scans the movie library for all video files
         return [
-            p for p in self.download_folder.rglob("*")
+            p for p in self.library_folder.rglob("*") # Use library_folder
             if p.is_file() and p.suffix.lower() in self.video_extensions
         ]
 
     def _tokenize_filename(self, filename: str) -> List[str]:
-        """Breaks a filename down into a list of potential junk words (tokens)."""
+        # Breaks a filename down into a list of potential junk words (tokens)
         name = Path(filename).stem
         name = re.sub(r"[\._\[\]\(\)-]", " ", name)
         tokens = [token.lower() for token in name.split()]
@@ -34,9 +33,7 @@ class JunkService:
 
 
     def build_junk_cache(self, force_rebuild: bool = False) -> Set[str]:
-        """
-        Analyzes ONLY unnormalized video filenames to dynamically build a set of common junk words.
-        """
+        # Analyzes ONLY unnormalized video filenames to dynamically build a set of common junk words.
         if not force_rebuild and self.cache_path.exists():
             try:
                 with self.cache_path.open("r", encoding="utf-8") as f:
@@ -54,8 +51,6 @@ class JunkService:
         all_tokens = []
         unnormalized_file_count = 0
         for file_path in video_files:
-            # --- NEW LOGIC ---
-            # Skip any file that already appears to be in the clean 'Title (Year)' format.
             if self._is_normalized_filename(file_path.stem):
                 continue
 
@@ -70,7 +65,6 @@ class JunkService:
         token_counts = Counter(all_tokens)
         junk_words = set()
 
-        # A token is junk if it appears in >20% of the *unnormalized* files.
         junk_threshold = unnormalized_file_count * 0.2
         for token, count in token_counts.items():
             if count > junk_threshold and count > 1:

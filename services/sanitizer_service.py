@@ -32,6 +32,12 @@ class SanitizerService:
         self.video_extensions = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv"}
         self.library_cache_path = self.fs_manager.download_folder / "library.json"
 
+    # --- NEW HELPER METHOD (copied from junk_service) ---
+    def _is_normalized_filename(self, filename_stem: str) -> bool:
+        """Checks if a filename matches the 'Title (Year)' format."""
+        # Matches a string that ends with a space and then a year in parentheses.
+        return bool(re.search(r'^.+\s\(\d{4}\)$', filename_stem))
+
     def _parse_filename(self, filename: str, junk_words: Set[str]) -> Optional[Tuple[str, Optional[int]]]:
         """
         Cleans and extracts a title and year using a dynamic junk list.
@@ -58,12 +64,9 @@ class SanitizerService:
             if final_year_match:
                 year = int(final_year_match.group(0))
 
-        # --- THIS IS THE FIX for Pylance Error #1 ---
-        # If no title was found, parsing failed. Return None.
         if not title:
             return None
 
-        # Otherwise, return the (title, year) tuple, which matches our type hint.
         return title, year
 
     def _scan_for_videos(self) -> List[Path]:
@@ -106,21 +109,23 @@ class SanitizerService:
         with Progress(console=self.console) as progress:
             task = progress.add_task("Processing files...", total=len(video_files))
             for file_path in video_files:
-                # This is Error #2's location. The code is correct.
-                # The linter was likely confused by the other errors.
                 if str(file_path) in [e.get('file_path') for e in library_cache.values()]:
                     progress.advance(task)
                     continue
 
-                # --- THIS IS THE FIX for the hidden unpacking bug ---
-                # We must check the result of _parse_filename before unpacking it.
+                # --- THIS IS THE FIX ---
+                # Skip files that are *already* normalized
+                if self._is_normalized_filename(file_path.stem):
+                    progress.advance(task)
+                    continue
+                # --- END OF FIX ---
+
                 parsed_data = self._parse_filename(file_path.name, junk_words)
                 if not parsed_data:
                     unparseable_files.append(file_path)
                     progress.advance(task)
                     continue
 
-                # Now it's safe to unpack
                 title, year = parsed_data
 
                 movie_data = self.tmdb_service.search_movie(title, year)
