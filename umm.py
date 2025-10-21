@@ -56,8 +56,8 @@ def print_menu():
   ███  ███   ███  ███  ███   ███  ███  ███
    ████████ █████ ███ █████ █████ ███ █████ ██ ██ ██
 """
-    console.print(Align.center(f"[bold cyan]{ascii_art}[/bold cyan]"))
-    console.print(Align.center("[dim]Unified (Unreasonable) Media Manager[/dim]\n"))
+    console.print(Align.left(f"[bold cyan]{ascii_art}[/bold cyan]"))
+    console.print(Align.left("[dim]Unified (Unreasonable) Media Manager[/dim]\n"))
 
     dry_run_status = "[bold green]ON[/]" if DRY_RUN else "[bold red]OFF[/]"
 
@@ -94,8 +94,8 @@ def print_menu():
         padding=(1, 3)
     )
 
-    # Center the whole panel for symmetry
-    console.print(Align.center(menu_panel))
+    # left the whole panel for symmetry
+    console.print(Align.left(menu_panel))
 
 
 def main():
@@ -145,7 +145,7 @@ def main():
                 console.print("[bold red]Invalid option, please try again.[/bold red]")
                 time.sleep(1)
 
-            if choice in "123456":
+            if choice in "12345":
                 console.input("\nPress Enter to return to the menu...")
 
 

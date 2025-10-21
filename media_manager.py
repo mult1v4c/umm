@@ -230,14 +230,14 @@ class MediaManager:
         table.add_row("[bold cyan]Last UMM Activity[/]", f"[white]{format_time_ago(last_run_ts)}[/]")
 
         panel = Panel(
-            Align.center(table),
+            Align.left(table),
             title="[bold cyan]Library Status[/bold cyan]",
             border_style="cyan",
             box=box.SQUARE,
             padding=(1, 4)
         )
         self.console.clear()
-        self.console.print(Align.center(panel))
+        self.console.print(Align.left(panel))
 
 
 
@@ -360,7 +360,7 @@ class MediaManager:
             padding=(1, 3)
         )
 
-        self.console.print(Align.center(panel))
+        self.console.print(Align.left(panel))
 
 
     def _edit_api_key(self):
@@ -441,14 +441,14 @@ class MediaManager:
             )
 
             panel = Panel(
-                Align.center(cache_text),
+                Align.left(cache_text),
                 title="[bold yellow]Clear Caches[/bold yellow]",
                 border_style="yellow",
                 box=box.SQUARE,
                 padding=(1, 3)
             )
 
-            self.console.print(Align.center(panel))
+            self.console.print(Align.left(panel))
             choice = self.console.input("Choose an option: ").strip().lower()
 
             if choice == "1":
