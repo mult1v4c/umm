@@ -20,7 +20,6 @@ def run_subprocess(cmd: List[str]) -> Tuple[bool, Optional[str], Optional[str]]:
         return False, e.stdout, e.stderr
 
 def format_time_ago(timestamp: float) -> str:
-    """Converts a UNIX timestamp to a human-readable 'time ago' string."""
     if timestamp == 0:
         return "never"
 

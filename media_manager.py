@@ -177,7 +177,6 @@ class MediaManager:
         self._execute_sync_operations(cache_deletions, trailer_deletions, library)
 
     def show_library_status(self):
-        """Displays a formatted Rich status dashboard for the library and caches."""
         logger.info("Gathering library status...")
 
         total_movies = 0
@@ -266,7 +265,6 @@ class MediaManager:
 
     # --- NEW FUNCTION ---
     def _generate_missing_assets(self):
-        """Scans the upcoming trailers folder and generates missing placeholders/backdrops."""
         logger.info(f"Scanning for missing assets in [cyan]{self.download_path}[/cyan]...")
 
         jobs = []
@@ -306,7 +304,6 @@ class MediaManager:
 
     # --- NEW HELPER FUNCTION ---
     def _run_asset_generation(self, jobs: List[tuple]):
-        """Runs the ffmpeg asset generation in a thread pool."""
         logger.info(f"Generating [bold blue]{len(jobs)}[/bold blue] assets...")
         ffmpeg_workers = self.cfg.get("MAX_FFMPEG_WORKERS", 4)
 

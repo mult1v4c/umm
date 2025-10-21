@@ -19,9 +19,6 @@ class TMDbService:
         self.cache_file = self.cache_folder / "movies_cache.json"
 
     def search_movie(self, title: str, year: Optional[int]) -> Optional[Dict]:
-        """
-        Searches for a movie by title and optional year.
-        """
         try:
             url = f"{BASE_URL}/search/movie"
             params = {"api_key": self.api_key, "query": title}

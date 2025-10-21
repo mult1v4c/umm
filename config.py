@@ -75,7 +75,6 @@ def load_config() -> Dict[str, Any]:
         sys.exit(1)
 
 def save_config(config_data: Dict[str, Any]):
-    """Saves the provided dictionary back to the config.json file."""
     try:
         with CONFIG_FILE_PATH.open("w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=4)
