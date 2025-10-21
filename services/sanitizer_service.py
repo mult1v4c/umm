@@ -41,10 +41,17 @@ class SanitizerService:
         """Checks if a filename matches the 'Title (Year)' format."""
         return bool(re.search(r'^.+\s\(\d{4}\)$', filename_stem))
 
+    def _parse_normalized_filename(self, filename_stem: str) -> Optional[Tuple[str, int]]:
+        """Extracts title and year from a *clean* 'Title (Year)' string."""
+        match = re.search(r'^(.*?)\s\((\d{4})\)$', filename_stem)
+        if match:
+            title = match.group(1)
+            year = int(match.group(2))
+            return title, year
+        return None
+
     def _parse_filename(self, filename: str, junk_words: Set[str]) -> Optional[Tuple[str, Optional[int]]]:
-        """
-        Cleans and extracts a title and year using a dynamic junk list.
-        """
+        """Cleans and extracts a title and year from a messy filename."""
         clean_name = Path(filename).stem
         year_match = re.search(r"\b(19\d{2}|20\d{2})\b", clean_name)
         year = None
@@ -62,7 +69,6 @@ class SanitizerService:
         title_tokens = []
         for t in tokens:
             is_year_digit = t.isdigit() and len(t) == 4 and (t.startswith('19') or t.startswith('20'))
-
             if t.lower() not in all_junk and not is_year_digit:
                 title_tokens.append(t)
 
@@ -83,10 +89,6 @@ class SanitizerService:
         return title, year
 
     def _scan_for_videos(self) -> List[Path]:
-        """
-        Scans for videos only in the root and one level deep.
-        This stops it from scanning "Featurettes" folders etc.
-        """
         video_files = []
         root_path = self.fs_manager.download_folder
         logger.info(f"Scanning for videos in [cyan]{root_path}[/cyan] (max 1 folder deep)...")
@@ -123,10 +125,12 @@ class SanitizerService:
         junk_words = self.junk_service.build_junk_cache()
         library_cache = self._load_library_cache()
 
-        # --- MODIFICATION: Store strings, not Path objects ---
         unparseable_files = []
         unmatched_files = []
         operations = []
+
+        # --- FIX: Track if we add clean files to the cache ---
+        cache_updated_with_clean_files = False
 
         video_files = self._scan_for_videos()
         if not video_files:
@@ -136,31 +140,51 @@ class SanitizerService:
         with Progress(console=self.console) as progress:
             task = progress.add_task("Processing files...", total=len(video_files))
             for file_path in video_files:
-                # Get a clean relative path for logging
                 try:
                     relative_path = file_path.relative_to(self.fs_manager.download_folder)
                 except ValueError:
                     relative_path = file_path
 
+                # Skip if already in cache by its full file path
                 if str(file_path) in [e.get('file_path') for e in library_cache.values()]:
                     progress.advance(task)
                     continue
 
+                # --- NEW LOGIC: Handle clean files ---
                 if self._is_normalized_filename(file_path.stem) and file_path.stem == file_path.parent.name:
+                    parsed_data = self._parse_normalized_filename(file_path.stem)
+                    if parsed_data:
+                        title, year = parsed_data
+                        movie_data = self.tmdb_service.search_movie(title, year)
+                        if movie_data:
+                            # Add directly to cache
+                            movie_id = str(movie_data['id'])
+                            library_cache[movie_id] = {
+                                "title": movie_data['title'],
+                                "year": movie_data['release_date'][:4],
+                                "file_path": str(file_path)
+                            }
+                            cache_updated_with_clean_files = True
+                        else:
+                            unmatched_files.append(str(relative_path))
+                    else:
+                        unparseable_files.append(str(relative_path))
+
                     progress.advance(task)
                     continue
+                # --- End new logic ---
 
+                # --- OLD LOGIC: Handle messy files ---
                 parsed_data = self._parse_filename(file_path.name, junk_words)
                 if not parsed_data:
-                    unparseable_files.append(str(relative_path)) # Store string
+                    unparseable_files.append(str(relative_path))
                     progress.advance(task)
                     continue
 
                 title, year = parsed_data
-
                 movie_data = self.tmdb_service.search_movie(title, year)
                 if not movie_data:
-                    unmatched_files.append(str(relative_path)) # Store string
+                    unmatched_files.append(str(relative_path))
                     progress.advance(task)
                     continue
 
@@ -179,15 +203,18 @@ class SanitizerService:
                 })
                 progress.advance(task)
 
+        # --- UPDATED SAVE LOGIC ---
         if operations:
             self._execute_operations(operations, library_cache)
+        elif cache_updated_with_clean_files:
+            logger.info("No files to move. Updating library cache with clean files...")
+            self._save_library_cache(library_cache)
         else:
             logger.info("Library is already up-to-date.")
 
-        # --- NEW REPORTING SECTION ---
         logger.info("\nSanitization Complete!")
         logger.info(f"  - Files processed: {len(video_files)}")
-        logger.info(f"  - Successful matches: {len(operations)}")
+        logger.info(f"  - Successful moves: {len(operations)}")
 
         if unparseable_files:
             logger.warning(f"  - [yellow]Unparseable files (could not get title/year): {len(unparseable_files)}[/yellow]")
@@ -198,7 +225,6 @@ class SanitizerService:
             logger.warning(f"  - [yellow]Unmatched files (no TMDB result): {len(unmatched_files)}[/yellow]")
             for f in unmatched_files:
                 logger.warning(f"    - {f}")
-        # --- END OF NEW SECTION ---
 
     def _execute_operations(self, operations: List[Dict], cache: Dict):
         if self.is_dry_run():

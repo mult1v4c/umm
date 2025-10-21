@@ -33,17 +33,15 @@ class MediaManager:
         self.known_failures: set[int] = set()
         self.library_path = Path(config["MOVIE_LIBRARY"]).expanduser()
         self.download_path = Path(config["DOWNLOAD_FOLDER"]).expanduser()
-        self.library_cache_path = self.library_path / "library.json" # library.json lives IN the movie library
+        self.library_cache_path = self.library_path / "library.json"
         self.video_extensions: Set[str] = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv"}
 
-        # --- Cache Paths ---
         self.cache_folder = Path(self.cfg["CACHE_FOLDER"]).expanduser()
         self.junk_cache_path = self.cache_folder / "junk_cache.json"
         self.tmdb_cache_path = self.cache_folder / "movies_cache.json"
         self.failures_cache_path = self._get_failures_cache_path()
 
 
-        # --- Services ---
         self.tmdb_service = TMDbService(
             api_key=config["TMDB_API_KEY"],
             cache_folder=config["CACHE_FOLDER"],
@@ -57,25 +55,21 @@ class MediaManager:
             ffmpeg_path=config["FFMPEG_PATH"]
         )
 
-        # --- TWO FILE SYSTEM MANAGERS ---
-        # One for the permanent, organized movie library
         self.library_fs_manager = FileSystemManager(
             download_folder=config["MOVIE_LIBRARY"]
         )
-        # One for the "inbox" where new upcoming trailers are downloaded
         self.download_fs_manager = FileSystemManager(
             download_folder=config["DOWNLOAD_FOLDER"]
         )
 
-        # --- INITIALIZE SERVICES WITH CORRECT PATHS ---
         self.junk_service = JunkService(
             cache_folder=config["CACHE_FOLDER"],
             video_extensions=self.video_extensions,
-            library_folder=self.library_path # Pass the library path
+            library_folder=self.library_path
         )
         self.sanitizer_service = SanitizerService(
             tmdb_service=self.tmdb_service,
-            fs_manager=self.library_fs_manager, # Sanitizer ONLY works on the library
+            fs_manager=self.library_fs_manager,
             junk_service=self.junk_service,
             console=self.console,
             is_dry_run=self.is_dry_run
@@ -85,7 +79,6 @@ class MediaManager:
 
     def sanitize_and_catalog_library(self):
         logger.info("Starting Library Scan & Cataloging...")
-        # This service is already correctly pointed at the MOVIE_LIBRARY
         self.sanitizer_service.run()
 
     def fetch_trailers_for_existing_movies(self):
@@ -97,7 +90,6 @@ class MediaManager:
         movies_to_download = []
         for movie_id, data in library.items():
             movie_path = Path(data['file_path'])
-            # Use the library_fs_manager to check for trailers
             paths = self.library_fs_manager.get_movie_paths(movie_path.parent.name)
 
             if not paths.get_trailer_path():
@@ -113,7 +105,6 @@ class MediaManager:
 
         logger.info(f"Found [bold blue]{len(movies_to_download)}[/bold blue] movies missing trailers.")
         self._load_known_failures()
-        # Process these downloads using the LIBRARY file system manager
         self._process_movies_pipeline(movies_to_download, self.library_fs_manager)
         self._save_known_failures()
 
@@ -134,7 +125,6 @@ class MediaManager:
             logger.warning("No upcoming movies found from TMDB. Exiting.")
             return
 
-        # Filter movies based on what's already in the DOWNLOAD folder
         movies_to_process = self._filter_existing_movies(
             movies, year_start, year_end, self.download_fs_manager
         )
@@ -142,7 +132,6 @@ class MediaManager:
         if self.is_dry_run():
             logger.info("[bold yellow]DRY RUN MODE: No files will be written![/]\nTrailers below ready for download:")
 
-        # Process these downloads using the DOWNLOAD file system manager
         self._process_movies_pipeline(movies_to_process, self.download_fs_manager)
         self._save_known_failures()
 
@@ -166,7 +155,6 @@ class MediaManager:
                 cache_deletions.append(movie_id)
 
         logger.info("Checking for orphaned trailer files...")
-        # Scan ONLY the movie library for trailers
         all_trailers = list(self.library_fs_manager.download_folder.rglob(f"*{TRAILER_SUFFIX}.mp4"))
         valid_movie_dirs = {Path(data['file_path']).parent for data in library.values() if 'file_path' in data}
 
@@ -196,7 +184,6 @@ class MediaManager:
         missing_trailers = 0
         for movie_id, data in library.items():
             movie_path = Path(data['file_path'])
-            # Use the library_fs_manager to check paths
             paths = self.library_fs_manager.get_movie_paths(movie_path.parent.name)
             if not paths.get_trailer_path():
                 missing_trailers += 1
@@ -206,7 +193,6 @@ class MediaManager:
 
 
     def show_settings_and_utilities(self):
-        # Displays the settings and utilities sub-menu
         while True:
             self._print_settings_menu()
             choice = self.console.input("Choose an option: ").strip().lower()
@@ -246,13 +232,12 @@ class MediaManager:
         if new_key:
             config["TMDB_API_KEY"] = new_key
             save_config(config)
-            self.tmdb_service.api_key = new_key # Update live service
+            self.tmdb_service.api_key = new_key
             self.console.print("[green]API Key updated.[/green]")
         time.sleep(1)
 
     def _edit_paths_setting(self):
         config = load_config()
-        # --- UPDATED TO INCLUDE MOVIE_LIBRARY ---
         current_library_path = config.get("MOVIE_LIBRARY")
         current_download_path = config.get("DOWNLOAD_FOLDER")
         current_cache_path = config.get("CACHE_FOLDER")
@@ -445,7 +430,6 @@ class MediaManager:
         except IOError as e:
             logger.error(f"Failed to write known failures cache: {e}")
 
-    # --- UPDATED HELPER: Takes an fs_manager ---
     def _filter_existing_movies(
         self, movies: List[Dict], year_start: int, year_end: int, fs_manager: FileSystemManager
     ) -> List[Dict]:
@@ -472,7 +456,6 @@ class MediaManager:
         logger.info(log_message)
         return movies_to_download
 
-    # --- UPDATED HELPER: Takes an fs_manager ---
     def _process_movies_pipeline(self, movies: list, fs_manager: FileSystemManager):
         if not movies:
             logger.info("No new movies to process.")
@@ -500,7 +483,6 @@ class MediaManager:
         ) as progress:
             task_id = progress.add_task("Downloading trailers", total=len(movies))
             download_futures = {
-                # Pass the fs_manager to the download task
                 dl_pool.submit(self._download_task, movie, ff_pool, fs_manager): movie
                 for movie in movies
             }
@@ -517,13 +499,13 @@ class MediaManager:
                     break
                 except Exception as e:
                     movie = download_futures[future]
+                    # Log the full error, not just a string
                     logger.info(f"[bold red]Error processing '{movie.get('title')}':[/] {e}")
                 finally:
                     progress.advance(task_id)
 
             ff_pool.shutdown(wait=True)
 
-    # --- UPDATED HELPER: Takes an fs_manager ---
     def _download_task(self, movie: Dict, ffmpeg_pool: ThreadPoolExecutor, fs_manager: FileSystemManager) -> Dict:
         movie_id = movie.get("id", 0)
         title = movie.get("title", "Unknown Title")
@@ -534,15 +516,17 @@ class MediaManager:
             result["reason"] = "known failure"
             return result
 
-        # Use the provided fs_manager
         folder_name = fs_manager.prepare_movie_folder_name(title, release_date)
         paths = fs_manager.get_movie_paths(folder_name)
         result["folder"] = folder_name
 
+        # --- THIS IS THE FIX ---
         if self.is_dry_run():
-            logger.info(f"- [cyan]{title}[/cyan] -> {paths.root.relative_to(Path.cwd())}")
+            # Log the absolute path, which is safe across different drives
+            logger.info(f"- [cyan]{title}[/cyan] -> {paths.root.resolve()}")
             result["reason"] = "dry-run"
             return result
+        # --- END OF FIX ---
 
         trailer_key = self.tmdb_service.get_trailer_key(movie_id)
         if not trailer_key:
