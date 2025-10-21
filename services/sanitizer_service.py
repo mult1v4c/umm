@@ -319,7 +319,10 @@ class SanitizerService:
                         "file_path": str(op['dest_file'])
                     }
                 except Exception as e:
-                    logger.error(f"  [red]FAILED to process {op['source_file'].name}: {e}[/red]")
+                    error_msg = f"  [red]FAILED to process {op['source_file'].name}: {e}[/red]"
+                    logger.error(error_msg)
+
+                    self.console.print(error_msg)
 
                 progress.advance(task)
 
