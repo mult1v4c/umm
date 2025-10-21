@@ -204,6 +204,10 @@ class MediaManager:
                 self._edit_api_key()
             elif choice == "3":
                 self._edit_performance_settings()
+            # --- NEW OPTION ---
+            elif choice == "4":
+                self._generate_missing_assets()
+                time.sleep(1)
             elif choice == "c":
                 self._clear_caches()
             elif choice == "0":
@@ -211,6 +215,75 @@ class MediaManager:
             else:
                 self.console.print("[bold red]Invalid option, please try again.[/bold red]")
                 time.sleep(1)
+
+    # --- NEW FUNCTION ---
+    def _generate_missing_assets(self):
+        """Scans the upcoming trailers folder and generates missing placeholders/backdrops."""
+        logger.info(f"Scanning for missing assets in [cyan]{self.download_path}[/cyan]...")
+
+        jobs = []
+        try:
+            folders_to_scan = [p for p in self.download_path.iterdir() if p.is_dir()]
+        except FileNotFoundError:
+            logger.warning(f"Download folder not found. Nothing to scan.")
+            return
+
+        for folder in folders_to_scan:
+            paths = self.download_fs_manager.get_movie_paths(folder.name)
+
+            if paths.get_trailer_path():
+                # Only generate assets if a trailer exists
+                if not paths.placeholder.exists():
+                    jobs.append(("placeholder", paths, folder.name))
+                if self.cfg["CREATE_BACKDROP"] and not paths.backdrop.exists():
+                    jobs.append(("backdrop", paths, folder.name))
+
+        if not jobs:
+            logger.info("[green]All assets are already generated.[/green]")
+            return
+
+        logger.info(f"Found [bold blue]{len(jobs)}[/bold blue] missing assets.")
+
+        if self.is_dry_run():
+            logger.info("[bold yellow]DRY RUN MODE: The following assets are planned for creation:[/bold yellow]")
+            for task_type, paths, title in jobs:
+                logger.info(f"  - [cyan]CREATE {task_type.upper()}:[/] in '{title}'")
+
+            if self.console.input("\n[bold]Proceed with changes? (y/n): [/bold]").lower() == 'y':
+                self._run_asset_generation(jobs)
+            else:
+                logger.info("Asset generation aborted.")
+        else:
+            self._run_asset_generation(jobs)
+
+    # --- NEW HELPER FUNCTION ---
+    def _run_asset_generation(self, jobs: List[tuple]):
+        """Runs the ffmpeg asset generation in a thread pool."""
+        logger.info(f"Generating [bold blue]{len(jobs)}[/bold blue] assets...")
+        ffmpeg_workers = self.cfg.get("MAX_FFMPEG_WORKERS", 4)
+
+        with ThreadPoolExecutor(max_workers=ffmpeg_workers, thread_name_prefix="FFmpeg") as ff_pool, \
+             Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(bar_width=None),
+                "[progress.percentage]{task.percentage:>3.0f}%",
+                TimeRemainingColumn(),
+                transient=True,
+                console=self.console,
+            ) as progress:
+
+            task_id = progress.add_task("Generating assets", total=len(jobs))
+            futures = [ff_pool.submit(self._ffmpeg_task, task_type, paths, title) for task_type, paths, title in jobs]
+
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"[red]Error during asset generation: {e}[/red]")
+                progress.advance(task_id)
+
+        logger.info("[green]Asset generation complete.[/green]")
 
     # --- Settings Sub-Menu Helpers ---
 
@@ -221,6 +294,8 @@ class MediaManager:
         self.console.print("[bold green][1][/] Edit File Paths")
         self.console.print("[bold green][2][/] Edit TMDB API Key")
         self.console.print("[bold green][3][/] Edit Performance")
+        # --- NEW OPTION ---
+        self.console.print("[bold green][4][/] Generate Missing Assets (for Upcoming)")
         self.console.print("[bold yellow][C][/] Clear Caches")
         self.console.print("[bold red][0][/] Back to Main Menu")
         self.console.print("-----------------------------------", justify="center")
@@ -581,7 +656,6 @@ class MediaManager:
         return result
 
     def _ffmpeg_task(self, task_type: str, paths: MoviePaths, title: str):
-
         if task_type == "placeholder":
             ok = self.asset_generator_service.create_black_video(
                 paths.placeholder,
