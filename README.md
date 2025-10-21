@@ -16,8 +16,8 @@ I used to have a bunch of PowerShell scripts to help organize my growing movie c
 
 That’s when I decided to combine everything into one modular tool and UMM was born. The new version is built around a safety-first philosophy, giving you complete control over every file change!
 
-[!NOTE]
-This is a work in progress, so expect improvements and changes over time.
+> [!NOTE]
+> This is a work in progress, so expect improvements and changes over time.
 
 
 ## Features
@@ -47,8 +47,8 @@ On the first launch, UMM will generate a default `config.json` file in your repo
 ```bash
 python umm.py
 ```
-[!NOTE]
-You must edit `config.json` to enter your `TMDB_API_KEY` before using the fetch features. All other settings, including folder paths and worker threads, can be easily adjusted via the `[6] Settings and Utilities` menu option!
+> [!NOTE]
+> You must edit `config.json` to enter your `TMDB_API_KEY` before using the fetch features. All other settings, including folder paths and worker threads, can be easily adjusted via the `[6] Settings and Utilities` menu option!
 
 
 | Option                   | Description                                       |
