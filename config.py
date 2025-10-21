@@ -9,8 +9,10 @@ CONFIG_FILE_PATH = Path("config.json")
 
 DEFAULT_CONFIG = {
     "TMDB_API_KEY": "YOUR_API_KEY",
-    "MOVIE_LIBRARY": "X:/Media/Movies",
-    "DOWNLOAD_FOLDER": "X:/Media/Trailers",
+    # --- NEW / UPDATED SETTINGS ---
+    "MOVIE_LIBRARY": "~/Movies",
+    "DOWNLOAD_FOLDER": "~/Downloads/UMM_New_Trailers",
+    # ---
     "CACHE_FOLDER": "~/.cache/umm",
     "YT_DLP_PATH": "yt-dlp",
     "FFMPEG_PATH": "ffmpeg",
@@ -53,13 +55,28 @@ def load_config() -> Dict[str, Any]:
 
     try:
         with CONFIG_FILE_PATH.open("r", encoding="utf-8") as f:
-            return json.load(f)
+            config_data = json.load(f)
+            # --- This is a new "migration" check ---
+            # It checks if any keys from the default config are missing
+            # If so, it adds them and saves the file.
+            missing_keys = False
+            for key, value in DEFAULT_CONFIG.items():
+                if key not in config_data:
+                    config_data[key] = value
+                    missing_keys = True
+
+            if missing_keys:
+                logger.warning("[yellow]Old config file detected. Adding new default settings...[/yellow]")
+                save_config(config_data)
+
+            return config_data
+
     except (IOError, json.JSONDecodeError) as e:
         logger.error(f"Failed to read or parse config file: {e}")
         sys.exit(1)
 
 def save_config(config_data: Dict[str, Any]):
-    # Saves the provided dictionary back to the config.json file
+    """Saves the provided dictionary back to the config.json file."""
     try:
         with CONFIG_FILE_PATH.open("w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=4)
