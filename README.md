@@ -12,20 +12,22 @@
 UMM (Unified Media Manager) is a modular Python-based tool that automates fetching, downloading, and organizing movie trailers, complete with placeholder and backdrop generation.
 
 ## Why UMM...
-I used to have a bunch of PowerShell scripts to help organize my growing movie collection.  But as I kept adding new scripts for each task I wanted automated, it became cumbersome to maintain.
+I used to have a bunch of PowerShell scripts to help organize my growing movie collection. But as I kept adding new scripts for each task I wanted automated, it became cumbersome to maintain.
 
-That’s when I decided to combine everything into one modular tool — and UMM was born.
+That’s when I decided to combine everything into one modular tool and UMM was born. The new version is built around a safety-first philosophy, giving you complete control over every file change!
 
-There are still features yet to be implemented, but I’m happy to share a stable version.  This is a work in progress, so expect improvements and changes over time.
+[!NOTE]
+This is a work in progress, so expect improvements and changes over time.
 
 
 ## Features
-- Checks the latest movies from TMDB and downloads trailers from YouTube using `yt-dlp`
-- Smart caching for TMDB API calls (reduces redundant network requests)
-- Generate placeholder assets using `ffmpeg` (explained below)
-- Concurrent processing with thread-safe task handling
-- Organize library with recognizable naming convention `Movie Title (2000)`
-- Dry-run mode for safely previewing actions before making any changes
+- **Interactive Menu Interface:** Easy-to-use persistent menu for all operations.
+- **Interactive Dry-Run Mode:** Safely simulate *all* file operations (rename, move, delete) and review a log before execution.
+- **Library Sanitation:** Automatically rename, organize, and catalog your existing movie files into the clean `Movie Title (YEAR)` folder structure.
+- **Intelligent Trailer Fetching:** Checks the latest movies from TMDB and downloads the best quality trailer from YouTube using `yt-dlp`. The selection logic prioritizes **Official Trailers** first.
+- **Comprehensive Caching:** Uses `library.json`, `upcoming_cache.json`, and `known_failures.json` for fast operation and preventing repeated failed attempts.
+- **Asset Generation:** Generate placeholder videos and custom black backdrops using `ffmpeg` for services like Jellyfin's Cinema Mode.
+- Concurrent processing with thread-safe task handling.
 
 ## Requirements
 - Python 3.10+
@@ -40,81 +42,66 @@ cd umm
 pip install -r requirements.txt
 ```
 
-## Quick Options
-
-Use `--help` for a full list of available commands.
-
-| **Option**                             | **Description**                         |
-| -------------------------------------- | --------------------------------------- |
-| `--year`, `--year-start`, `--year-end` | Define which years to process.          |
-| `--all`                                | Run all stages (default).               |
-| `--download`                           | Only download trailers.                 |
-| `--placeholders`, `--backdrops`        | Only generate assets.                   |
-| `--dry-run`                            | Simulate actions without writing files. |
-| `--count`                              | Limit number of downloads.              |
-| `--clear-cache`, `--no-cache`          | Manage TMDB API cache.                  |
-| `--report`, `--export-list`            | Output processed data.                  |
-| `--verbose`, `--quiet`                 | Control logging level.                  |
-
-
-## Example Usage
-
-**Fetch and download trailers for a specific year**
-```
-python umm.py --year 2025
-```
-
-**Check available trailers from 2020 to 2025**
-```
-python umm.py --year-start 2020 --year-end 2025 --dry-run
-```
-
-**Download a limited number of trailers**
-```
-python umm.py --year 2025 --count 5
-```
-
-## Configuration
-Runtime options can be set via CLI flags or the generated `config.json`.
-
-**First generate config**
+## Configuration & First Run
+On the first launch, UMM will generate a default `config.json` file in your repository folder.
 ```
 python umm.py
 ```
+[!NOTE]
+You must edit `config.json` to enter your `TMDB_API_KEY` before using the fetch features. All other settings, including folder paths and worker threads, can be easily adjusted via the `[6] Settings and Utilities` menu option!
+
 
 | Option                   | Description                                       |
 | ------------------------ | ------------------------------------------------- |
 | `TMDB_API_KEY`           | Your TMDB API key (required)                      |
-| `DOWNLOAD_FOLDER`        | Base folder for movies and trailers               |
+| `MOVIE_LIBRARY`          | Root folder for your organized movies             |
+| `DOWNLOAD_FOLDER`        | Folder where upcoming trailers are downloaded     |
 | `CACHE_FOLDER`           | Local cache directory for TMDB data               |
 | `MAX_DOWNLOAD_WORKERS`   | Number of parallel download threads               |
 | `MAX_FFMPEG_WORKERS`     | Number of parallel FFmpeg tasks                   |
 | `CREATE_BACKDROP`        | Whether to generate backdrop images               |
-| `PLACEHOLDER_DURATION`   | Duration (in seconds) of black placeholder videos |
-| `PLACEHOLDER_RESOLUTION` | Output resolution for generated assets            |
+
+## Interactive UMM Menu
+
+The tool runs in a persistent, easy-to-use menu. All critical operations are guarded by the Dry-Run Mode.
+
+Core Principles
+
+1. **Safety First:** The menu starts with Dry-Run Mode ON for your protection.
+
+2. **Interactive Confirmation:** For actions that modify files, UMM will run a dry simulation, show you the planned changes, and ask for explicit confirmation (`y/n`) before making any changes.
+
+### Menu Options Explained
+|Option|Function                          |Summary of Action                                                                                                                                                                     |
+|------|----------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|`[1]`   |Sanitize & Catalog Movie Library  |Scans your `/Movies` folder, cleans messy filenames, renames and organizes files into the standard `Movie Title (YEAR)` folder structure, and builds the `library.json` catalog.            |
+|`[2]`   |Fetch Trailers for Existing Movies|Iterates through your organized `library.json` and downloads any missing trailers directly into your organized movie folders.                                                           |
+|`[3]`   |Fetch Upcoming Movie Trailers     |Queries TMDB for new and popular movies, downloads trailers into the dedicated `/Trailers` (or `DOWNLOAD_FOLDER`) path, and generates black placeholder videos and backdrops for Jellyfin.|
+|`[4]`   |Sync Trailers with Movie Library  |Finds movies in the `/Trailers` folder that now exist in your main library and moves the trailer/assets to the correct library movie folder.                                            |
+|`[5]`   |Library Status                    |A quick dashboard showing total movies, missing trailers, and recent UMM activity.                                                                                                    |
+|`[6]`   |Settings and Utilities            |Access to change folder paths, API keys, worker counts, and clear various caches (e.g., junk words, known failures).                                                                  |
+|`[D]`   |Toggle Dry-Run Mode               |Toggles the crucial safety mode ON or OFF.                                                                                                                                            |
 
 
 ## Jellyfin Integration
-I use Jellyfin with several plugins and one of which is [Cinema Mode](https://github.com/CherryFloors/jellyfin-plugin-cinemamode). It uses local trailers from a library within Jellyfin and plays them before your selected media (just like in the theaters). UMM's role in this setup is scanning TMDB for upcoming movie releases and downloads its trailers to your selected folder.
+I use Jellyfin with several plugins and one of which is [Cinema Mode](https://github.com/CherryFloors/jellyfin-plugin-cinemamode). It uses local trailers from a library within Jellyfin and plays them before your selected media (just like in the theaters). UMM's role is to download upcoming movie trailers and set them up correctly.
 
-Since Jellyfin does not recognize trailers as actual movies, you need placeholder files with the same name for it to properly display in your library. In this case, UMM generates a 1-second video file and names it accordingly. This way, the library may now be used with cinema mode. This is explained better in this [Reddit post](https://www.reddit.com/r/JellyfinCommunity/comments/1mm9n6c/bringing_movie_theater_magic_to_jellyfin_my/).
+Since Jellyfin does not recognize trailers as actual movies, you need placeholder files with the same name for it to properly display in your library. UMM generates a 1-second video file and names it accordingly. This way, the library may now be used with cinema mode. This is explained better in this [Reddit post](https://www.reddit.com/r/JellyfinCommunity/comments/1mm9n6c/bringing_movie_theater_magic_to_jellyfin_my/).
 
-I've also designed UMM to generate a black `backdrop.jpg` for the trailers. The reason being Cinema Mode has a quick delay between playing the next trailer and it shows the backdrop image for a split second. Using this black backdrop enhances the immersion instead of a quick glance of the actual backdrop generated by Jellyfin.
+The custom black backdrop.jpg UMM generates helps enhance the cinematic immersion by covering the brief delay between trailers with a solid black screen instead of a quick flash of the actual backdrop generated by Jellyfin.
 
 Here's a sample directory structure:
 ```
 📁 Media/Trailers/
 │
 └── Oppenheimer (2023)/
-    ├── Oppenheimer (2023)-trailer.mp4
-    ├── Oppenheimer (2023).mp4
-    └── backdrop.jpg
+    ├── Oppenheimer (2023)-trailer.mp4  <-- Trailer downloaded from YouTube
+    ├── Oppenheimer (2023).mp4          <-- Black placeholder video
+    └── backdrop.jpg                    <-- Custom black backdrop
 ```
 
 ## Future Plans
-- [ ] Fetch movie data and trailers of your existing library
-- [ ] Improve TMDB queries since current version only checks for 3 pages per year (can be changed in config)
-- [ ] Improve trailer selection logic
-- [ ] Add option to organize existing movie library
-- [ ] Menu interface for ease of use
-- [ ] Granular trailer selection options
+The core menu and major functions are now implemented! Here are a few things planned for the future:
+
+- [ ] Add a function to automatically delete empty folders created during the library sanitation and sync process.
+- [ ] Granular control over the trailer selection logic within the Settings menu.

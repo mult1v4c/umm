@@ -51,13 +51,14 @@ def print_menu():
     console.clear()
     ascii_art = r"""
  █████ ████ █████████████   █████████████
-  ███  ███   ███  ███  ███   ███  ███  ███
-  ███  ███   ███  ███  ███   ███  ███  ███
-  ███  ███   ███  ███  ███   ███  ███  ███
-   ████████ █████ ███ █████ █████ ███ █████ ██ ██ ██
+░░███ ░███ ░░███░░███░░███ ░░███░░███░░███
+ ░███ ░███  ░███ ░███ ░███  ░███ ░███ ░███
+ ░███ ░███  ░███ ░███ ░███  ░███ ░███ ░███
+ ░░████████ █████░███ █████ █████░███ █████ ██ ██ ██
+  ░░░░░░░░ ░░░░░ ░░░ ░░░░░ ░░░░░ ░░░ ░░░░░ ░░ ░░ ░░
 """
     console.print(Align.left(f"[bold cyan]{ascii_art}[/bold cyan]"))
-    console.print(Align.left("[dim]Unified (Unreasonable) Media Manager[/dim]\n"))
+    console.print(Align.left("[dim]        Unified (Unreasonable) Media Manager[/dim]\n"))
 
     dry_run_status = "[bold green]ON[/]" if DRY_RUN else "[bold red]OFF[/]"
 
@@ -91,7 +92,7 @@ def print_menu():
         title_align="left",
         box=box.SQUARE,
         border_style="cyan",
-        padding=(1, 3)
+        padding=(1, 3),
     )
 
     # left the whole panel for symmetry
