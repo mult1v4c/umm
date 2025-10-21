@@ -8,8 +8,8 @@ from config import BASE_URL, DISCOVER_URL
 
 logger = logging.getLogger("media_manager")
 
-class TMDbService:
 
+class TMDbService:
     def __init__(self, api_key: str, cache_folder: str, pages_per_year: int, tmdb_filters: Dict):
         self.api_key = api_key
         self.cache_folder = Path(cache_folder).expanduser()
@@ -18,8 +18,27 @@ class TMDbService:
         self.cache_folder.mkdir(parents=True, exist_ok=True)
         self.cache_file = self.cache_folder / "movies_cache.json"
 
-    def fetch_movies(self, year_start: int, year_end: int, no_cache: bool, clear_cache: bool) -> List[Dict]:
+    def search_movie(self, title: str, year: Optional[int]) -> Optional[Dict]:
+        """
+        Searches for a movie by title and optional year.
+        """
+        try:
+            url = f"{BASE_URL}/search/movie"
+            params = {"api_key": self.api_key, "query": title}
+            if year:
+                params["year"] = str(year)
 
+            resp = requests.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+
+            # Simple logic: return the first result if it exists
+            return results[0] if results else None
+        except requests.RequestException as e:
+            logger.warning(f"Failed to search for movie '{title}': {e}")
+            return None
+
+    def fetch_movies(self, year_start: int, year_end: int, no_cache: bool, clear_cache: bool) -> List[Dict]:
         if clear_cache and self.cache_file.exists():
             self.cache_file.unlink()
             logger.info(f"Cleared persistent cache file: [yellow]{self.cache_file}[/yellow]")
@@ -44,13 +63,11 @@ class TMDbService:
             for year_str in years_to_fetch:
                 year_movies = self._fetch_movies_for_year(int(year_str))
                 cached_movies_by_year[year_str] = year_movies
-
             self._save_cache(cached_movies_by_year)
 
         all_movies = []
         for year in requested_years:
             all_movies.extend(cached_movies_by_year.get(str(year), []))
-
         return all_movies
 
     def _fetch_movies_for_year(self, year: int) -> List[Dict]:
@@ -85,31 +102,23 @@ class TMDbService:
             resp = requests.get(url, params=params, timeout=10)
             resp.raise_for_status()
             videos = resp.json().get("results", [])
-
             youtube_videos = [v for v in videos if v.get("site") == "YouTube"]
-
-            # Define priority order
             priorities = {
-                ("Trailer", True): 1,  # Official Trailer
-                ("Trailer", False): 2, # Unofficial Trailer
-                ("Teaser", True): 3,   # Official Teaser
-                ("Teaser", False): 4,  # Unofficial Teaser
+                ("Trailer", True): 1,
+                ("Trailer", False): 2,
+                ("Teaser", True): 3,
+                ("Teaser", False): 4,
             }
-
             best_video = None
             lowest_priority = float('inf')
-
             for v in youtube_videos:
                 v_type = v.get("type")
                 v_official = v.get("official", False)
                 priority = priorities.get((v_type, v_official))
-
                 if priority is not None and priority < lowest_priority:
                     best_video = v
                     lowest_priority = priority
-
             return best_video.get("key") if best_video else None
-
         except requests.RequestException:
             logger.warning(f"Failed to fetch trailer key for movie ID {movie_id}.")
             return None
