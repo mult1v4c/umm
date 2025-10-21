@@ -2,6 +2,7 @@ import csv
 import json
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Any, List, Callable, Set, Optional
@@ -10,7 +11,8 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
-from config import KNOWN_FAILURES_FILENAME, TRAILER_SUFFIX
+# --- IMPORT THE NEW SAVE FUNCTION ---
+from config import KNOWN_FAILURES_FILENAME, TRAILER_SUFFIX, load_config, save_config
 from services.tmdb_service import TMDbService
 from services.downloader_service import DownloaderService
 from services.asset_generator_service import AssetGeneratorService
@@ -30,8 +32,14 @@ class MediaManager:
         self.failure_lock = threading.Lock()
         self.stats = {"downloads": [], "placeholders": 0, "backdrops": 0}
         self.known_failures: set[int] = set()
-        self.library_cache_path = Path(config["DOWNLOAD_FOLDER"]) / "library.json"
+        self.library_cache_path = Path(config["DOWNLOAD_FOLDER"]).expanduser() / "library.json"
         self.video_extensions: Set[str] = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv"}
+
+        # --- Cache Paths ---
+        self.cache_folder = Path(self.cfg["CACHE_FOLDER"]).expanduser()
+        self.junk_cache_path = self.cache_folder / "junk_cache.json"
+        self.tmdb_cache_path = self.cache_folder / "movies_cache.json"
+        self.failures_cache_path = self._get_failures_cache_path()
 
 
         # --- Services ---
@@ -131,7 +139,6 @@ class MediaManager:
         cache_deletions = []
         trailer_deletions = []
 
-        # Check 1: Cache Integrity (Movies in cache but files missing)
         logger.info("Checking for missing movie files...")
         for movie_id, data in library.items():
             movie_path = Path(data.get('file_path', ''))
@@ -139,7 +146,6 @@ class MediaManager:
                 logger.warning(f"  [yellow]Missing file for '{data['title']}'. Marking cache entry for removal.[/yellow]")
                 cache_deletions.append(movie_id)
 
-        # Check 2: Orphaned Trailers (Trailers present but movie missing from cache)
         logger.info("Checking for orphaned trailer files...")
         all_trailers = list(self.fs_manager.download_folder.rglob(f"*{TRAILER_SUFFIX}.mp4"))
         valid_movie_dirs = {Path(data['file_path']).parent for data in library.values() if 'file_path' in data}
@@ -149,7 +155,6 @@ class MediaManager:
                 logger.warning(f"  [yellow]Found orphaned trailer: '{trailer_path.name}'. Marking for deletion.[/yellow]")
                 trailer_deletions.append(trailer_path)
 
-        # 3. Execute or Simulate Operations
         if not cache_deletions and not trailer_deletions:
             logger.info("[green]Library is already perfectly in sync![/green]")
             return
@@ -180,7 +185,143 @@ class MediaManager:
 
 
     def show_settings_and_utilities(self):
-        logger.info("[bold yellow]Feature not yet implemented.[/bold yellow]")
+        """Displays the settings and utilities sub-menu."""
+        while True:
+            self._print_settings_menu()
+            choice = self.console.input("Choose an option: ").strip().lower()
+
+            if choice == "1":
+                self._edit_paths_setting()
+            elif choice == "2":
+                self._edit_api_key()
+            elif choice == "3":
+                self._edit_performance_settings()
+            elif choice == "c":
+                self._clear_caches()
+            elif choice == "0":
+                break
+            else:
+                self.console.print("[bold red]Invalid option, please try again.[/bold red]")
+                time.sleep(1)
+
+    # --- Settings Sub-Menu Helpers ---
+
+    def _print_settings_menu(self):
+        self.console.clear()
+        self.console.print("[bold cyan]Settings & Utilities[/bold cyan]")
+        self.console.print("-----------------------------------", justify="center")
+        self.console.print("[bold green][1][/] Edit File Paths")
+        self.console.print("[bold green][2][/] Edit TMDB API Key")
+        self.console.print("[bold green][3][/] Edit Performance")
+        self.console.print("[bold yellow][C][/] Clear Caches")
+        self.console.print("[bold red][0][/] Back to Main Menu")
+        self.console.print("-----------------------------------", justify="center")
+
+    def _edit_api_key(self):
+        config = load_config()
+        current_key = config.get("TMDB_API_KEY", "NOT SET")
+        self.console.print(f"Current TMDB API Key: [cyan]{current_key}[/cyan]")
+        new_key = self.console.input("Enter new TMDB API Key (or press Enter to cancel): ").strip()
+        if new_key:
+            config["TMDB_API_KEY"] = new_key
+            save_config(config)
+            self.tmdb_service.api_key = new_key # Update live service
+            self.console.print("[green]API Key updated.[/green]")
+        time.sleep(1)
+
+    def _edit_paths_setting(self):
+        config = load_config()
+        current_movie_path = config.get("DOWNLOAD_FOLDER")
+        current_cache_path = config.get("CACHE_FOLDER")
+
+        self.console.print(f"Current Movie Library Path: [cyan]{current_movie_path}[/cyan]")
+        new_movie_path = self.console.input("Enter new Movie Library Path (or press Enter to keep): ").strip()
+
+        self.console.print(f"Current Cache Path: [cyan]{current_cache_path}[/cyan]")
+        new_cache_path = self.console.input("Enter new Cache Path (or press Enter to keep): ").strip()
+
+        if new_movie_path:
+            config["DOWNLOAD_FOLDER"] = new_movie_path
+        if new_cache_path:
+            config["CACHE_FOLDER"] = new_cache_path
+
+        if new_movie_path or new_cache_path:
+            save_config(config)
+            self.console.print("[green]Paths updated. Restart UMM for all changes to take effect.[/green]")
+        time.sleep(2)
+
+    def _edit_performance_settings(self):
+        config = load_config()
+        current_dl = config.get("MAX_DOWNLOAD_WORKERS")
+        current_ff = config.get("MAX_FFMPEG_WORKERS")
+
+        self.console.print(f"Current Download Workers: [cyan]{current_dl}[/cyan]")
+        new_dl = self.console.input("Enter new Download Workers (or press Enter to keep): ").strip()
+
+        self.console.print(f"Current FFmpeg Workers: [cyan]{current_ff}[/cyan]")
+        new_ff = self.console.input("Enter new FFmpeg Workers (or press Enter to keep): ").strip()
+
+        try:
+            if new_dl:
+                config["MAX_DOWNLOAD_WORKERS"] = int(new_dl)
+            if new_ff:
+                config["MAX_FFMPEG_WORKERS"] = int(new_ff)
+
+            if new_dl or new_ff:
+                save_config(config)
+                self.console.print("[green]Performance settings updated.[/green]")
+        except ValueError:
+            self.console.print("[red]Invalid input. Workers must be a number.[/red]")
+        time.sleep(1)
+
+
+    def _clear_caches(self):
+        """Sub-menu for clearing specific cache files."""
+        while True:
+            self.console.clear()
+            self.console.print("[bold yellow]Clear Caches[/bold yellow]")
+            self.console.print("-----------------------------------", justify="center")
+            self.console.print(f"[1] Clear Upcoming Movie Cache ([cyan]{self.tmdb_cache_path.name}[/cyan])")
+            self.console.print(f"[2] Clear Junk Word Cache ([cyan]{self.junk_cache_path.name}[/cyan])")
+            self.console.print(f"[3] Clear Known Failures Cache ([cyan]{self.failures_cache_path.name}[/cyan])")
+            self.console.print(f"[bold red][4] Clear Movie Library Cache ([/bold red][cyan]{self.library_cache_path.name}[/cyan][bold red])[/bold red]")
+            self.console.print("-----------------------------------", justify="center")
+            self.console.print("[bold red][A] CLEAR ALL CACHES[/bold red]")
+            self.console.print("[0] Back to Settings")
+            choice = self.console.input("Choose an option: ").strip().lower()
+
+            if choice == "1":
+                self._safe_delete_cache(self.tmdb_cache_path, "Upcoming Movie Cache")
+            elif choice == "2":
+                self._safe_delete_cache(self.junk_cache_path, "Junk Word Cache")
+            elif choice == "3":
+                self._safe_delete_cache(self.failures_cache_path, "Known Failures Cache")
+            elif choice == "4":
+                self.console.print(f"[bold red]WARNING: This will delete your main {self.library_cache_path.name}.[/bold red]")
+                self.console.print("You will need to re-run the Sanitizer to rebuild it.")
+                if self.console.input("Are you sure? (y/n): ").lower() == 'y':
+                    self._safe_delete_cache(self.library_cache_path, "Movie Library Cache")
+            elif choice == "a":
+                self.console.print("[bold red]WARNING: This will clear ALL cache files.[/bold red]")
+                if self.console.input("Are you sure? (y/n): ").lower() == 'y':
+                    self._safe_delete_cache(self.tmdb_cache_path, "Upcoming Movie Cache")
+                    self._safe_delete_cache(self.junk_cache_path, "Junk Word Cache")
+                    self._safe_delete_cache(self.failures_cache_path, "Known Failures Cache")
+                    self._safe_delete_cache(self.library_cache_path, "Movie Library Cache", warn=False)
+            elif choice == "0":
+                break
+            time.sleep(1)
+
+    def _safe_delete_cache(self, file_path: Path, file_name: str, warn: bool = True):
+        if not file_path.exists():
+            self.console.print(f"[yellow]{file_name} not found. Already clear.[/yellow]")
+            return
+        try:
+            file_path.unlink()
+            self.console.print(f"[green]{file_name} has been cleared.[/green]")
+        except OSError as e:
+            self.console.print(f"[red]Failed to delete {file_name}: {e}[/red]")
+
 
     # --- Library Cache Helpers ---
 
@@ -223,7 +364,6 @@ class MediaManager:
             self._run_sync_operations(cache_deletions, trailer_deletions, library)
 
     def _run_sync_operations(self, cache_deletions, trailer_deletions, library):
-        # Perform file deletions
         for trailer_path in trailer_deletions:
             try:
                 trailer_path.unlink()
@@ -231,7 +371,6 @@ class MediaManager:
             except OSError as e:
                 logger.error(f"  [red]FAILED to delete '{trailer_path}': {e}[/red]")
 
-        # Perform cache deletions
         if cache_deletions:
             cleaned_library = {mid: data for mid, data in library.items() if mid not in cache_deletions}
             self._save_library_cache(cleaned_library)
@@ -253,7 +392,7 @@ class MediaManager:
         return cache_folder / KNOWN_FAILURES_FILENAME
 
     def _load_known_failures(self):
-        cache_path = self._get_failures_cache_path()
+        cache_path = self.failures_cache_path
         if cache_path.exists():
             try:
                 with cache_path.open("r", encoding="utf-8") as f:
@@ -269,7 +408,7 @@ class MediaManager:
     def _save_known_failures(self):
         if not self.known_failures:
             return
-        cache_path = self._get_failures_cache_path()
+        cache_path = self.failures_cache_path
         try:
             with cache_path.open("w", encoding="utf-8") as f:
                 json.dump(list(self.known_failures), f, indent=2)
