@@ -50,13 +50,11 @@ class MediaManager:
         self.fs_manager = FileSystemManager(
             download_folder=config["DOWNLOAD_FOLDER"]
         )
-        # Instantiate the new JunkService
         self.junk_service = JunkService(
             cache_folder=config["CACHE_FOLDER"],
             video_extensions=self.video_extensions,
             download_folder=self.fs_manager.download_folder
         )
-        # Pass it to the SanitizerService
         self.sanitizer_service = SanitizerService(
             tmdb_service=self.tmdb_service,
             fs_manager=self.fs_manager,
@@ -72,8 +70,40 @@ class MediaManager:
         self.sanitizer_service.run()
 
     def fetch_trailers_for_existing_movies(self):
-        # This will be the next feature to implement
-        logger.info("[bold yellow]Feature not yet implemented.[/bold yellow]")
+        logger.info("Fetching trailers for existing movies in the library...")
+        if not self.library_cache_path.exists():
+            logger.warning("[yellow]Library cache ('library.json') not found. Run the sanitizer [1] first.[/yellow]")
+            return
+
+        try:
+            with self.library_cache_path.open("r", encoding="utf-8") as f:
+                library = json.load(f)
+        except json.JSONDecodeError:
+            logger.error("[red]Could not parse library.json. It may be corrupt.[/red]")
+            return
+
+        movies_to_download = []
+        for movie_id, data in library.items():
+            movie_path = Path(data['file_path'])
+            paths = self.fs_manager.get_movie_paths(movie_path.parent.name)
+
+            # Check if a trailer file already exists
+            if not paths.get_trailer_path():
+                movies_to_download.append({
+                    "id": int(movie_id),
+                    "title": data['title'],
+                    "release_date": f"{data['year']}-01-01" # Mock release date for folder name
+                })
+
+        if not movies_to_download:
+            logger.info("[green]Your library is fully up-to-date with trailers![/green]")
+            return
+
+        logger.info(f"Found [bold blue]{len(movies_to_download)}[/bold blue] movies missing trailers.")
+        self._load_known_failures()
+        self._process_movies_pipeline(movies_to_download)
+        self._save_known_failures()
+
 
     def fetch_upcoming_movie_trailers(self):
         logger.info("Starting to fetch upcoming movie trailers...")
@@ -126,21 +156,23 @@ class MediaManager:
         missing_trailers = 0
         for movie_id, data in library.items():
             movie_path = Path(data['file_path'])
-            trailer_exists = any(f.name.endswith("-trailer.mp4") for f in movie_path.parent.iterdir())
-            if not trailer_exists:
+            paths = self.fs_manager.get_movie_paths(movie_path.parent.name)
+            if not paths.get_trailer_path():
                 missing_trailers += 1
 
         table.add_row(str(len(library)), str(missing_trailers))
         self.console.print(table)
 
+
     def show_settings_and_utilities(self):
         logger.info("[bold yellow]Feature not yet implemented.[/bold yellow]")
 
-    # ... (the rest of the file remains the same)
+    # --- Helper Methods ---
+
     def _increment_failures(self):
         with self.failure_lock:
             self.failures += 1
-            if self.failures >= 5: # Simplified failure check
+            if self.failures >= 5:
                 raise RuntimeError(
                     "Too many download failures. Check network or YouTube availability."
                 )
@@ -315,7 +347,7 @@ class MediaManager:
                 paths.placeholder,
                 duration=self.cfg["PLACEHOLDER_DURATION"],
                 resolution=self.cfg["PLACEHOLDER_RESOLUTION"],
-                overwrite=True, # Simplified for now
+                overwrite=True,
             )
             if ok:
                 logger.info(f"   Created placeholder for {title}")
@@ -325,7 +357,7 @@ class MediaManager:
             ok = self.asset_generator_service.create_backdrop_image(
                 paths.backdrop,
                 resolution=self.cfg["PLACEHOLDER_RESOLUTION"],
-                overwrite=True, # Simplified for now
+                overwrite=True,
             )
             if ok:
                 logger.info(f"   Created backdrop for {title}")
