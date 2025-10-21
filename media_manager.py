@@ -8,9 +8,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Any, List, Callable, Set, Optional
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
+from rich.align import Align
+from rich import box
 
 from config import KNOWN_FAILURES_FILENAME, TRAILER_SUFFIX, STATUS_FILENAME, load_config, save_config
 from services.tmdb_service import TMDbService
@@ -173,10 +177,9 @@ class MediaManager:
         self._execute_sync_operations(cache_deletions, trailer_deletions, library)
 
     def show_library_status(self):
-        """Displays a simple text-based status of the library and caches."""
+        """Displays a formatted Rich status dashboard for the library and caches."""
         logger.info("Gathering library status...")
 
-        # 1. Get Library Stats
         total_movies = 0
         missing_trailers = 0
         library = self._load_library_cache()
@@ -191,7 +194,6 @@ class MediaManager:
         else:
             logger.info("Run the Sanitizer [1] to build your library.")
 
-        # 2. Get Upcoming Trailers Stats
         upcoming_trailers = 0
         try:
             if self.download_path.exists():
@@ -199,13 +201,12 @@ class MediaManager:
         except Exception as e:
             logger.warning(f"Could not scan download folder: {e}")
 
-        # 3. Get Cache Timestamps
         last_cache_update_ts = 0
         if self.library_cache_path.exists():
             try:
                 last_cache_update_ts = self.library_cache_path.stat().st_mtime
             except FileNotFoundError:
-                pass # Will just show "never"
+                pass
 
         last_run_ts = 0
         if self.status_file_path.exists():
@@ -213,22 +214,31 @@ class MediaManager:
                 with self.status_file_path.open("r", encoding="utf-8") as f:
                     last_run_ts = json.load(f).get("last_run", 0)
             except (json.JSONDecodeError, IOError, FileNotFoundError):
-                pass # Will just show "never"
+                pass
 
-        # 4. Get Known Failures
-        self._load_known_failures() # Ensure it's loaded
+        self._load_known_failures()
         known_failures_count = len(self.known_failures)
 
-        # 5. Print the report
-        self.console.print("\n[bold cyan]------ UMM Status Report ------[/bold cyan]")
-        self.console.print(f"  [bold]Total Movies:[/bold] {total_movies}")
-        self.console.print(f"  [bold]Movies Missing Trailers:[/bold] {missing_trailers}")
-        self.console.print(f"  [bold]Upcoming Trailers:[/bold] {upcoming_trailers}")
-        self.console.print(f"  [bold]Known Trailer Failures:[/bold] {known_failures_count}")
-        self.console.print("  -----------------------------")
-        self.console.print(f"  [bold]Last Library Scan:[/bold] {format_time_ago(last_cache_update_ts)}")
-        self.console.print(f"  [bold]Last UMM Activity:[/bold] {format_time_ago(last_run_ts)}")
-        self.console.print("[bold cyan]-----------------------------[/bold cyan]\n")
+        # Build status table
+        table = Table.grid(padding=(0, 2))
+        table.add_row("[bold cyan]Total Movies[/]", f"[white]{total_movies}[/]")
+        table.add_row("[bold cyan]Missing Trailers[/]", f"[yellow]{missing_trailers}[/]")
+        table.add_row("[bold cyan]Upcoming Trailers[/]", f"[white]{upcoming_trailers}[/]")
+        table.add_row("[bold cyan]Known Failures[/]", f"[red]{known_failures_count}[/]")
+        table.add_row("", "")
+        table.add_row("[bold cyan]Last Library Scan[/]", f"[white]{format_time_ago(last_cache_update_ts)}[/]")
+        table.add_row("[bold cyan]Last UMM Activity[/]", f"[white]{format_time_ago(last_run_ts)}[/]")
+
+        panel = Panel(
+            Align.center(table),
+            title="[bold cyan]Library Status[/bold cyan]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(1, 4)
+        )
+        self.console.clear()
+        self.console.print(Align.center(panel))
+
 
 
     def show_settings_and_utilities(self):
@@ -327,16 +337,31 @@ class MediaManager:
 
     def _print_settings_menu(self):
         self.console.clear()
-        self.console.print("[bold cyan]Settings & Utilities[/bold cyan]")
-        self.console.print("-----------------------------------", justify="center")
-        self.console.print("[bold green][1][/] Edit File Paths")
-        self.console.print("[bold green][2][/] Edit TMDB API Key")
-        self.console.print("[bold green][3][/] Edit Performance")
-        # --- NEW OPTION ---
-        self.console.print("[bold green][4][/] Generate Missing Assets (for Upcoming)")
-        self.console.print("[bold yellow][C][/] Clear Caches")
-        self.console.print("[bold red][0][/] Back to Main Menu")
-        self.console.print("-----------------------------------", justify="center")
+
+        options = Text.from_markup(
+            "[bold green][1][/bold green] Edit File Paths\n"
+            "[bold green][2][/bold green] Edit TMDB API Key\n"
+            "[bold green][3][/bold green] Edit Performance Settings\n"
+            "[bold green][4][/bold green] Generate Missing Assets (Upcoming)\n"
+            "[bold yellow][C][/bold yellow] Clear Caches\n"
+            "[bold red][0][/bold red] Back to Main Menu"
+        )
+
+        group = Group(
+            options
+        )
+
+        panel = Panel(
+            group,
+            title="[bold cyan]Settings & Utilities[/bold cyan]",
+            title_align="left",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(1, 3)
+        )
+
+        self.console.print(Align.center(panel))
+
 
     def _edit_api_key(self):
         config = load_config()
@@ -405,15 +430,25 @@ class MediaManager:
     def _clear_caches(self):
         while True:
             self.console.clear()
-            self.console.print("[bold yellow]Clear Caches[/bold yellow]")
-            self.console.print("-----------------------------------", justify="center")
-            self.console.print(f"[1] Clear Upcoming Movie Cache ([cyan]{self.tmdb_cache_path.name}[/cyan])")
-            self.console.print(f"[2] Clear Junk Word Cache ([cyan]{self.junk_cache_path.name}[/cyan])")
-            self.console.print(f"[3] Clear Known Failures Cache ([cyan]{self.failures_cache_path.name}[/cyan])")
-            self.console.print(f"[bold red][4] Clear Movie Library Cache ([/bold red][cyan]{self.library_cache_path.name}[/cyan][bold red])[/bold red]")
-            self.console.print("-----------------------------------", justify="center")
-            self.console.print("[bold red][A] CLEAR ALL CACHES[/bold red]")
-            self.console.print("[0] Back to Settings")
+
+            cache_text = Text.from_markup(
+                f"[bold green][1][/bold green] Clear Upcoming Movie Cache ([cyan]{self.tmdb_cache_path.name}[/cyan])\n"
+                f"[bold green][2][/bold green] Clear Junk Word Cache ([cyan]{self.junk_cache_path.name}[/cyan])\n"
+                f"[bold green][3][/bold green] Clear Known Failures Cache ([cyan]{self.failures_cache_path.name}[/cyan])\n"
+                f"[bold red][4][/bold red] Clear Movie Library Cache ([cyan]{self.library_cache_path.name}[/cyan])\n\n"
+                "[bold red][A][/bold red] Clear All Caches\n"
+                "[bold yellow][0][/bold yellow] Back to Settings"
+            )
+
+            panel = Panel(
+                Align.center(cache_text),
+                title="[bold yellow]Clear Caches[/bold yellow]",
+                border_style="yellow",
+                box=box.SQUARE,
+                padding=(1, 3)
+            )
+
+            self.console.print(Align.center(panel))
             choice = self.console.input("Choose an option: ").strip().lower()
 
             if choice == "1":
@@ -423,12 +458,12 @@ class MediaManager:
             elif choice == "3":
                 self._safe_delete_cache(self.failures_cache_path, "Known Failures Cache")
             elif choice == "4":
-                self.console.print(f"[bold red]WARNING: This will delete your main {self.library_cache_path.name}.[/bold red]")
+                self.console.print(f"[bold red]WARNING:[/] This will delete your main {self.library_cache_path.name}.")
                 self.console.print("You will need to re-run the Sanitizer to rebuild it.")
                 if self.console.input("Are you sure? (y/n): ").lower() == 'y':
                     self._safe_delete_cache(self.library_cache_path, "Movie Library Cache")
             elif choice == "a":
-                self.console.print("[bold red]WARNING: This will clear ALL cache files.[/bold red]")
+                self.console.print("[bold red]WARNING: This will clear ALL caches.[/bold red]")
                 if self.console.input("Are you sure? (y/n): ").lower() == 'y':
                     self._safe_delete_cache(self.tmdb_cache_path, "Upcoming Movie Cache")
                     self._safe_delete_cache(self.junk_cache_path, "Junk Word Cache")
@@ -437,6 +472,7 @@ class MediaManager:
             elif choice == "0":
                 break
             time.sleep(1)
+
 
     def _safe_delete_cache(self, file_path: Path, file_name: str, warn: bool = True):
         if not file_path.exists():
