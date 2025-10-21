@@ -1,4 +1,3 @@
-# mult1v4c/umm/umm-a89e29615fabfbb6e2334882de581ce3e1669695/media_manager.py
 import csv
 import json
 import logging
@@ -94,11 +93,17 @@ class MediaManager:
             paths = self.library_fs_manager.get_movie_paths(movie_path.parent.name)
 
             if not paths.get_trailer_path():
+                # --- THIS IS THE FIX for Bugs 2 & 3 ---
+                # We pass the *exact* local folder path to the downloader
+                # instead of letting it re-calculate one from the TMDB title.
                 movies_to_download.append({
                     "id": int(movie_id),
                     "title": data['title'],
-                    "release_date": f"{data['year']}-01-01"
+                    "release_date": f"{data['year']}-01-01",
+                    "local_folder_path": movie_path.parent,
+                    "local_folder_name": movie_path.parent.name
                 })
+                # --- END OF FIX ---
 
         if not movies_to_download:
             logger.info("[green]Your library is fully up-to-date with trailers![/green]")
@@ -107,7 +112,6 @@ class MediaManager:
         logger.info(f"Found [bold blue]{len(movies_to_download)}[/bold blue] movies missing trailers.")
         self._load_known_failures()
 
-        # --- FIX: Set create_assets=False ---
         self._execute_download_pipeline(movies_to_download, self.library_fs_manager, create_assets=False)
         self._save_known_failures()
 
@@ -132,7 +136,6 @@ class MediaManager:
             movies, year_start, year_end, self.download_fs_manager
         )
 
-        # --- FIX: Set create_assets=True ---
         self._execute_download_pipeline(movies_to_process, self.download_fs_manager, create_assets=True)
         self._save_known_failures()
 
@@ -445,6 +448,14 @@ class MediaManager:
 
             folder_name = fs_manager.prepare_movie_folder_name(title, release_date)
             paths = fs_manager.get_movie_paths(folder_name)
+
+            # --- THIS IS THE FIX for Bugs 2 & 3 ---
+            # We must pass the calculated folder name to the download task
+            # for Option 3. For Option 2, this is handled in its own loop.
+            movie["local_folder_name"] = folder_name
+            movie["local_folder_path"] = paths.root
+            # --- END OF FIX ---
+
             if not paths.get_trailer_path():
                 movies_to_download.append(movie)
 
@@ -457,7 +468,6 @@ class MediaManager:
         logger.info(log_message)
         return movies_to_download
 
-    # --- FIX: Added create_assets flag ---
     def _execute_download_pipeline(self, movies: list, fs_manager: FileSystemManager, create_assets: bool = False):
         if not movies:
             logger.info("No new trailers to download.")
@@ -467,23 +477,22 @@ class MediaManager:
             logger.info("[bold yellow]DRY RUN MODE: The following trailers are planned for download:[/bold yellow]")
             for movie in movies:
                 title = movie.get("title", "Unknown Title")
-                release_date = movie.get("release_date", "")
-                folder_name = fs_manager.prepare_movie_folder_name(title, release_date)
-                paths = fs_manager.get_movie_paths(folder_name)
-                trailer_path = paths.root / f"{folder_name}{TRAILER_SUFFIX}.mp4"
+                # --- THIS IS THE FIX for Bugs 2 & 3 ---
+                # Use the pre-determined local folder path
+                folder_name = movie.get("local_folder_name", "Unknown")
+                folder_path = movie.get("local_folder_path", "Unknown")
+                # --- END OF FIX ---
+                trailer_path = folder_path / f"{folder_name}{TRAILER_SUFFIX}.mp4"
                 logger.info(f"  - [cyan]{title}[/cyan] -> {trailer_path.resolve()}")
 
             if self.console.input("\n[bold]Proceed with changes? (y/n): [/bold]").lower() == 'y':
                 logger.info("Executing downloads...")
-                # Pass flag
                 self._process_movies_pipeline(movies, fs_manager, create_assets)
             else:
                 logger.info("Download aborted by user.")
         else:
-            # Pass flag
             self._process_movies_pipeline(movies, fs_manager, create_assets)
 
-    # --- FIX: Added create_assets flag ---
     def _process_movies_pipeline(self, movies: list, fs_manager: FileSystemManager, create_assets: bool = False):
         if not movies:
             logger.info("No new movies to process.")
@@ -510,7 +519,6 @@ class MediaManager:
         ) as progress:
             task_id = progress.add_task("Downloading trailers", total=len(movies))
             download_futures = {
-                # Pass flag
                 dl_pool.submit(self._download_task, movie, ff_pool, fs_manager, create_assets): movie
                 for movie in movies
             }
@@ -533,19 +541,31 @@ class MediaManager:
 
             ff_pool.shutdown(wait=True)
 
-    # --- FIX: Added create_assets flag ---
     def _download_task(self, movie: Dict, ffmpeg_pool: ThreadPoolExecutor, fs_manager: FileSystemManager, create_assets: bool = False) -> Dict:
         movie_id = movie.get("id", 0)
         title = movie.get("title", "Unknown Title")
-        release_date = movie.get("release_date", "")
         result = {"folder": title, "downloaded": False, "reason": ""}
 
         if movie_id in self.known_failures:
             result["reason"] = "known failure"
             return result
 
-        folder_name = fs_manager.prepare_movie_folder_name(title, release_date)
+        # --- THIS IS THE FIX for Bugs 2 & 3 ---
+        # Use the passed-in folder name and path, don't recalculate it.
+        folder_name = movie.get("local_folder_name")
+        folder_path = movie.get("local_folder_path")
+
+        if not folder_name or not folder_path:
+            # This is a fallback for Option 3 (Upcoming), which calculates it differently.
+            folder_name = fs_manager.prepare_movie_folder_name(title, movie.get("release_date", ""))
+            folder_path = fs_manager.download_folder / folder_name
+
+        # We now have the definitive folder path, e.g., "X:\Media\Movies\Amelie (2001)"
         paths = fs_manager.get_movie_paths(folder_name)
+        # We MUST override the root to be the one we were given
+        paths.root = folder_path
+        # --- END OF FIX ---
+
         result["folder"] = folder_name
 
         trailer_key = self.tmdb_service.get_trailer_key(movie_id)
@@ -570,7 +590,6 @@ class MediaManager:
 
         result["downloaded"] = True
 
-        # --- FIX: Only run this if the flag is True ---
         if create_assets:
             ffmpeg_pool.submit(self._ffmpeg_task, "placeholder", paths, title)
             if self.cfg["CREATE_BACKDROP"]:
@@ -578,8 +597,6 @@ class MediaManager:
         return result
 
     def _ffmpeg_task(self, task_type: str, paths: MoviePaths, title: str):
-        # We check dry_run here so that even if create_assets=True, we still don't
-        # create files if the main dry_run toggle is on.
         if self.is_dry_run():
             logger.info(
                 f"[yellow]Dry Run:[/] Would create {task_type} for '[cyan]{title}[/cyan]'"
