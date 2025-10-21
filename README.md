@@ -105,3 +105,5 @@ The core menu and major functions are now implemented! Here are a few things pla
 
 - [ ] Add a function to automatically delete empty folders created during the library sanitation and sync process.
 - [ ] Granular control over the trailer selection logic within the Settings menu.
+- [ ] Faster TMDB queries via parallel requests
+- [ ] Code optimization
