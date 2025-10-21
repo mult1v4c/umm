@@ -255,7 +255,6 @@ class SanitizerService:
         if self.is_dry_run():
             logger.info("[bold yellow]DRY RUN MODE: The following changes are planned:[/bold yellow]")
             for op in operations:
-                # --- THIS IS THE FIX ---
                 if op["op_type"] == "move_file":
                     logger.info(f"  [cyan]MOVE FILE:[/]   '{op['source_file']}' -> '{op['dest_file']}'")
                 elif op["op_type"] == "rename_folder":
@@ -263,10 +262,13 @@ class SanitizerService:
                     logger.info(f"  [green]RENAME FILE:[/]   '{op['source_file'].name}' -> '{op['dest_file'].name}'")
                 elif op["op_type"] == "rename_file_in_place":
                     logger.info(f"  [blue]RENAME FILE IN PLACE:[/] '{op['source_file']}' -> '{op['dest_file']}'")
-                # --- END OF FIX ---
 
-            if self.console.input("\n[bold]Proceed with changes? (y/n): [/bold]").lower() == 'y':
-                self._run_file_operations(operations, cache)
+                prompt_text = "\n[bold]Proceed with changes? (y/n): [/bold]"
+                width = self.console.width
+                padding = (width - len(prompt_text.strip().replace("[bold]", "").replace("[/bold]", ""))) // 2
+
+                if self.console.input(" " * padding + prompt_text).strip().lower() == 'y':
+                    self._run_file_operations(operations, cache)
             else:
                 logger.info("Aborted by user.")
         else:

@@ -57,8 +57,8 @@ def print_menu():
  ░░████████ █████░███ █████ █████░███ █████ ██ ██ ██
   ░░░░░░░░ ░░░░░ ░░░ ░░░░░ ░░░░░ ░░░ ░░░░░ ░░ ░░ ░░
 """
-    console.print(Align.left(f"[bold cyan]{ascii_art}[/bold cyan]"))
-    console.print(Align.left("[dim]        Unified (Unreasonable) Media Manager[/dim]\n"))
+    console.print(Align.center(f"[bold cyan]{ascii_art}[/bold cyan]"))
+    console.print(Align.center("[dim]Unified (Unreasonable) Media Manager[/dim]\n"))
 
     dry_run_status = "[bold green]ON[/]" if DRY_RUN else "[bold red]OFF[/]"
 
@@ -96,7 +96,7 @@ def print_menu():
     )
 
     # left the whole panel for symmetry
-    console.print(Align.left(menu_panel))
+    console.print(Align.center(menu_panel))
 
 
 def main():
@@ -124,7 +124,12 @@ def main():
     while True:
             _update_last_run_time(status_path)
             print_menu()
-            choice = console.input("Choose an option: ").strip().lower()
+
+            prompt_text = "Choose an option: "
+            width = console.width
+            padding = (width - len(prompt_text)) // 2
+
+            choice = console.input(" " * padding + prompt_text).strip().lower()
 
             if choice == "1":
                 manager.sanitize_and_catalog_library()

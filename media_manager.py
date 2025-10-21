@@ -236,14 +236,19 @@ class MediaManager:
             padding=(1, 4)
         )
         self.console.clear()
-        self.console.print(Align.left(panel))
+        self.console.print(Align.center(panel))
 
 
 
     def show_settings_and_utilities(self):
         while True:
             self._print_settings_menu()
-            choice = self.console.input("Choose an option: ").strip().lower()
+
+            prompt_text = "Choose an option: "
+            width = self.console.width
+            padding = (width - len(prompt_text)) // 2
+
+            choice = self.console.input(" " * padding + prompt_text).strip().lower()
 
             if choice == "1":
                 self._edit_paths_setting()
@@ -357,7 +362,7 @@ class MediaManager:
             padding=(1, 3)
         )
 
-        self.console.print(Align.left(panel))
+        self.console.print(Align.center(panel))
 
 
     def _edit_api_key(self):
@@ -445,8 +450,12 @@ class MediaManager:
                 padding=(1, 3)
             )
 
-            self.console.print(Align.left(panel))
-            choice = self.console.input("Choose an option: ").strip().lower()
+            self.console.print(Align.center(panel))
+            prompt_text = "Choose an option: "
+            width = self.console.width
+            padding = (width - len(prompt_text)) // 2
+
+            choice = self.console.input(" " * padding + prompt_text).strip().lower()
 
             if choice == "1":
                 self._safe_delete_cache(self.tmdb_cache_path, "Upcoming Movie Cache")
@@ -514,8 +523,12 @@ class MediaManager:
             for trailer_path in trailer_deletions:
                 logger.info(f"  [red]DELETE FILE:[/] Orphaned trailer '{trailer_path}'")
 
-            if self.console.input("\n[bold]Proceed with changes? (y/n): [/bold]").lower() == 'y':
-                logger.info("Executing sync operations...")
+                prompt_text = "\n[bold]Proceed with changes? (y/n): [/bold]"
+                width = self.console.width
+                padding = (width - len(prompt_text.strip().replace("[bold]", "").replace("[/bold]", ""))) // 2
+
+                if self.console.input(" " * padding + prompt_text).strip().lower() == 'y':
+                    logger.info("Executing sync operations...")
                 self._run_sync_operations(cache_deletions, trailer_deletions, library)
             else:
                 logger.info("Sync aborted by user.")
@@ -621,7 +634,11 @@ class MediaManager:
                 trailer_path = folder_path / f"{folder_name}{TRAILER_SUFFIX}.mp4"
                 logger.info(f"  - [cyan]{title}[/cyan] -> {trailer_path.resolve()}")
 
-            if self.console.input("\n[bold]Proceed with changes? (y/n): [/bold]").lower() == 'y':
+            prompt_text = "\n[bold]Proceed with changes? (y/n): [/bold]"
+            width = self.console.width
+            padding = (width - len(prompt_text.strip().replace("[bold]", "").replace("[/bold]", ""))) // 2
+
+            if self.console.input(" " * padding + prompt_text).strip().lower() == 'y':
                 logger.info("Executing downloads...")
                 self._process_movies_pipeline(movies, fs_manager, create_assets)
             else:
