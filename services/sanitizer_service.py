@@ -263,11 +263,11 @@ class SanitizerService:
                 elif op["op_type"] == "rename_file_in_place":
                     logger.info(f"  [blue]RENAME FILE IN PLACE:[/] '{op['source_file']}' -> '{op['dest_file']}'")
 
-                prompt_text = "\n[bold]Proceed with changes? (y/n): [/bold]"
-                width = self.console.width
-                padding = (width - len(prompt_text.strip().replace("[bold]", "").replace("[/bold]", ""))) // 2
+            prompt_text = "\n[bold]Proceed with changes? (y/n): [/bold]"
+            width = self.console.width
+            padding = (width - len(prompt_text.strip().replace("[bold]", "").replace("[/bold]", ""))) // 2
 
-                if self.console.input(" " * padding + prompt_text).strip().lower() == 'y':
+            if self.console.input(" " * padding + prompt_text).strip().lower() == 'y':
                     self._run_file_operations(operations, cache)
             else:
                 logger.info("Aborted by user.")
